@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/menu_terminal"
+        android:icon="@android:drawable/ic_menu_manage"
+        android:title="@string/menu_terminal"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/menu_refresh"
+        android:icon="@android:drawable/ic_menu_rotate"
+        android:title="@string/menu_refresh"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_restart_server"
+        android:title="@string/menu_restart_server"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_about"
+        android:title="@string/menu_about"
+        app:showAsAction="never" />
+
+</menu>

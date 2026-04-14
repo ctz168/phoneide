@@ -12,3 +12,9 @@ __pycache__/
 phoneide_workspace/
 .venv/
 .env
+
+# Android build artifacts
+android/app/build/
+android/.gradle/
+android/local.properties
+*.keystore

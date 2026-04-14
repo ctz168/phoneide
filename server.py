@@ -259,6 +259,11 @@ def index():
 def static_files(path):
     return send_from_directory(app.static_folder, path)
 
+# ---- Health Check API ----
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok', 'version': '1.0.0', 'port': PORT})
+
 # ---- Config APIs ----
 @app.route('/api/config', methods=['GET'])
 @handle_error
