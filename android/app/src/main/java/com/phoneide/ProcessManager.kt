@@ -353,7 +353,33 @@ class ProcessManager(private val context: Context) {
         timeoutMs: Long = 300_000
     ): CommandResult {
         initialize()
+        
+        // Verify proot binary exists
+        if (!File(prootBin).exists()) {
+            Log.e(TAG, "Proot binary not found at: $prootBin")
+            return CommandResult(
+                success = false,
+                stdout = "ERROR: proot binary not found at $prootBin\n",
+                stderr = "proot binary missing",
+                exitCode = -1,
+                durationMs = 0
+            )
+        }
+        
+        // Verify rootfs exists
+        if (!isRootfsReady()) {
+            Log.e(TAG, "Rootfs not ready at: $rootfsDir")
+            return CommandResult(
+                success = false,
+                stdout = "ERROR: rootfs not ready (missing $rootfsDir/bin/bash)\n",
+                stderr = "rootfs not ready",
+                exitCode = -1,
+                durationMs = 0
+            )
+        }
+        
         val cmdArray = buildInstallCommand(command, cwd, env)
+        Log.d(TAG, "runInProot cmd: ${cmdArray.take(6).joinToString(" ")} ...")
         return executeCommand(cmdArray, timeoutMs)
     }
 
@@ -385,9 +411,22 @@ class ProcessManager(private val context: Context) {
      */
     fun startLoginShell(columns: Int = 80, rows: Int = 24): Process? {
         initialize()
+        
+        // Verify proot binary exists
+        if (!File(prootBin).exists()) {
+            Log.e(TAG, "startLoginShell: proot binary not found at: $prootBin")
+            return null
+        }
+        
+        // Verify rootfs exists
+        if (!isRootfsReady()) {
+            Log.e(TAG, "startLoginShell: rootfs not ready at: $rootfsDir")
+            return null
+        }
+        
         val cmdArray = buildLoginCommand(columns, rows)
         return try {
-            Log.d(TAG, "Starting login shell")
+            Log.d(TAG, "Starting login shell: ${cmdArray.take(6).joinToString(" ")} ...")
             val pb = ProcessBuilder(*cmdArray)
             pb.redirectErrorStream(false)
             pb.environment()["LD_LIBRARY_PATH"] = libDir

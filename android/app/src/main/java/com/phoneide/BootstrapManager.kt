@@ -54,14 +54,17 @@ class BootstrapManager(
             // Ubuntu 25.10 (questing) - latest
             urls.add("$RELEASES_BASE/v4.30.1/ubuntu-questing-$archSuffix-pd-v4.30.1.tar.xz")
 
+            // Ubuntu 24.04 LTS (noble) v4.11.0 - smaller size fallback
+            urls.add("$RELEASES_BASE/v4.11.0/ubuntu-noble-$archSuffix-pd-v4.11.0.tar.xz")
+
             // GitHub mirror proxies (for users who can't access github.com directly)
             val ghProxies = listOf(
                 "https://ghfast.top",
-                "https://gh-proxy.com",
-                "https://gh.api.99988866.xyz"
+                "https://gh-proxy.com"
             )
             for (proxy in ghProxies) {
                 urls.add("$proxy/$RELEASES_BASE/v4.18.0/ubuntu-noble-$archSuffix-pd-v4.18.0.tar.xz")
+                urls.add("$proxy/$RELEASES_BASE/v4.29.0/ubuntu-plucky-$archSuffix-pd-v4.29.0.tar.xz")
             }
 
             return urls
@@ -82,8 +85,11 @@ class BootstrapManager(
 
     fun isRootfsReady(): Boolean {
         val rootfsDir = processManager.getRootfsDir()
-        return File("$rootfsDir/bin/bash").exists() &&
-               File("$rootfsDir/etc/apt").isDirectory
+        val bashExists = File("$rootfsDir/bin/bash").exists()
+        val aptExists = File("$rootfsDir/etc/apt").isDirectory
+        val usrExists = File("$rootfsDir/usr").isDirectory
+        Log.d(TAG, "isRootfsReady: bash=$bashExists, apt=$aptExists, usr=$usrExists")
+        return bashExists && (aptExists || usrExists)
     }
 
     /**
@@ -377,24 +383,56 @@ class BootstrapManager(
 
     /**
      * Install Python, Flask, and other dependencies inside proot.
+     * Non-fatal: logs warnings but does not throw exceptions.
      */
     private fun installDependencies() {
-        // Use processManager.runInProot to execute apt commands
-        val result = processManager.runInProot(
-            "apt-get update && apt-get install -y python3 python3-pip python3-venv git curl wget nano 2>&1",
-            timeoutMs = 600_000
-        )
-        Log.d(TAG, "apt-get install result: success=${result.success}, exit=${result.exitCode}")
-        if (result.stderr.isNotEmpty()) {
-            Log.w(TAG, "apt stderr: ${result.stderr.take(500)}")
-        }
+        try {
+            // Step 1: Quick test that proot + rootfs actually works
+            val testResult = processManager.runInProot(
+                "echo 'proot OK' && cat /etc/os-release | head -1",
+                timeoutMs = 30_000
+            )
+            if (!testResult.success) {
+                Log.e(TAG, "Proot test failed: ${testResult.stdout}")
+                reportProgress(-1, "Proot 测试失败: ${testResult.stdout.take(200)}")
+                // Don't return - try apt anyway
+            } else {
+                Log.d(TAG, "Proot test OK: ${testResult.stdout.trim()}")
+            }
 
-        // Install Flask
-        val pipResult = processManager.runInProot(
-            "pip3 install --break-system-packages flask flask-cors 2>&1 || pip3 install flask flask-cors 2>&1",
-            timeoutMs = 300_000
-        )
-        Log.d(TAG, "pip install result: success=${pipResult.success}")
+            // Step 2: apt-get update
+            val updateResult = processManager.runInProot(
+                "apt-get update 2>&1",
+                timeoutMs = 120_000
+            )
+            Log.d(TAG, "apt-get update: success=${updateResult.success}, exit=${updateResult.exitCode}")
+            if (!updateResult.success) {
+                Log.w(TAG, "apt-get update failed (non-fatal): ${updateResult.stdout.take(300)}")
+            }
+
+            // Step 3: apt-get install python3
+            val installResult = processManager.runInProot(
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip 2>&1",
+                timeoutMs = 600_000
+            )
+            Log.d(TAG, "apt-get install result: success=${installResult.success}, exit=${installResult.exitCode}")
+            if (installResult.stdout.isNotEmpty()) {
+                Log.d(TAG, "apt stdout: ${installResult.stdout.take(500)}")
+            }
+
+            // Step 4: Install Flask
+            val pipResult = processManager.runInProot(
+                "pip3 install --break-system-packages flask flask-cors 2>&1 || pip3 install flask flask-cors 2>&1",
+                timeoutMs = 300_000
+            )
+            Log.d(TAG, "pip install result: success=${pipResult.success}")
+            if (pipResult.stdout.isNotEmpty()) {
+                Log.d(TAG, "pip stdout: ${pipResult.stdout.take(300)}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "installDependencies failed (non-fatal): ${e.message}")
+            reportProgress(-1, "依赖安装失败(非致命): ${e.message}")
+        }
     }
 
     /**

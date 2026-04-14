@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -31,7 +32,7 @@ class TerminalActivity : AppCompatActivity() {
     private lateinit var outputView: TextView
     private lateinit var inputLine: LinearLayout
     private lateinit var inputPrompt: TextView
-    private lateinit var inputField: TextView
+    private lateinit var inputField: EditText
     private lateinit var btnClose: View
     private lateinit var btnFontSizeUp: View
     private lateinit var btnFontSizeDown: View
@@ -138,15 +139,27 @@ class TerminalActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        inputField = TextView(context).apply {
+        inputField = EditText(context).apply {
             setTextColor(Color.parseColor("#C9D1D9"))
+            setHintTextColor(Color.parseColor("#484F58"))
+            hint = "输入命令..."
             typeface = android.graphics.Typeface.MONOSPACE
             textSize = currentFontSize.toFloat()
             setSingleLine(false)
             setMinLines(1)
             setMaxLines(5)
             imeOptions = EditorInfo.IME_FLAG_NO_ENTER_ACTION or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-            setHintTextColor(Color.parseColor("#484F58"))
+            background = null
+            setPadding(0, 0, 0, 0)
+            // Handle Enter key via setOnEditorActionListener instead of setOnKeyListener
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_NULL || actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_NEXT) {
+                    executeCommand()
+                    true
+                } else {
+                    false
+                }
+            }
         }
         inputScroll.addView(inputField)
 
@@ -158,6 +171,8 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun setupInputHandling() {
+        // Enter key is handled inside buildTerminalUI via setOnEditorActionListener
+        // Also add setOnKeyListener as fallback for hardware keyboards
         inputField.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 executeCommand()
@@ -167,14 +182,7 @@ class TerminalActivity : AppCompatActivity() {
             }
         }
 
-        inputField.isFocusable = true
-        inputField.isFocusableInTouchMode = true
         inputField.requestFocus()
-
-        inputField.setOnClickListener {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            imm.showSoftInput(inputField, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-        }
     }
 
     private fun executeCommand() {
@@ -251,6 +259,27 @@ class TerminalActivity : AppCompatActivity() {
     private fun startTerminalSession() {
         scope.launch {
             try {
+                // Pre-check: verify proot binary exists
+                val prootBin = processManager.getProotBin()
+                if (!java.io.File(prootBin).exists()) {
+                    withContext(Dispatchers.Main) {
+                        appendOutput("错误: proot 二进制文件未找到\n")
+                        appendOutput("路径: $prootBin\n")
+                        appendOutput("请先完成初始设置\n")
+                    }
+                    return@launch
+                }
+
+                // Pre-check: verify rootfs exists
+                if (!processManager.isRootfsReady()) {
+                    withContext(Dispatchers.Main) {
+                        appendOutput("错误: Ubuntu rootfs 未安装\n")
+                        appendOutput("请先完成初始设置流程\n")
+                        appendOutput("或返回主界面点击设置\n")
+                    }
+                    return@launch
+                }
+
                 val label = when (currentSession) {
                     SessionType.UBUNTU -> "Ubuntu proot shell"
                     SessionType.PYTHON -> "Python REPL"

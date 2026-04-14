@@ -104,7 +104,22 @@ class ServerService : Service() {
 
                 if (serverProcess == null) {
                     appendLog("ERROR: Failed to start proot process\n")
-                    return@launch
+                    appendLog("Trying direct execution without proot...\n")
+                    // Fallback: try running python3 directly from rootfs
+                    try {
+                        val rootfsDir = processManager.getRootfsDir()
+                        val pb = ProcessBuilder(
+                            "$rootfsDir/usr/bin/python3",
+                            "$rootfsDir/root/phoneide/server.py"
+                        )
+                        pb.environment()["LD_LIBRARY_PATH"] = "$rootfsDir/usr/lib/aarch64-linux-gnu:$rootfsDir/lib/aarch64-linux-gnu"
+                        pb.redirectErrorStream(true)
+                        serverProcess = pb.start()
+                        appendLog("Direct python3 started\n")
+                    } catch (e2: Exception) {
+                        appendLog("Direct execution also failed: ${e2.message}\n")
+                        return@launch
+                    }
                 }
 
                 isRunning = true
