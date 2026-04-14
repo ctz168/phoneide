@@ -4,7 +4,21 @@
 
 在手机上打开浏览器即可获得完整的代码编辑体验：语法高亮、文件管理、Git 操作、代码运行、AI 编程助手——一个应用搞定全部。
 
-## 一键安装
+## 安装方式
+
+### 方式一：Android APK 直接安装（推荐）
+
+下载 APK 文件安装到 Android 手机上，自带 WebView 和终端，无需浏览器：
+
+1. 从 [Releases](https://github.com/ctz168/phoneide/releases) 页面下载最新 APK
+2. 在手机上启用 **设置 → 安全 → 允许安装未知来源应用**
+3. 打开下载的 APK 文件安装
+4. 首次启动需要先安装 [Termux](https://f-droid.org/packages/com.termux/)（从 F-Droid 安装）
+5. 按照 PhoneIDE 向导完成 Ubuntu 环境初始化
+
+> 前置条件：手机上需要先从 F-Droid 安装 Termux，PhoneIDE 会利用 Termux 的 proot-distro 来运行 Ubuntu 环境。
+
+### 方式二：Termux 一键安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ctz168/phoneide/main/install.sh | bash -s -- -r ctz168/phoneide
@@ -137,6 +151,7 @@ phoneide/
 ├── requirements.txt    # Python 依赖
 ├── install.sh          # 安装脚本
 ├── start.sh            # 启动脚本
+├── build_apk.sh        # Android APK 构建脚本
 └── static/
     ├── index.html      # 主页面
     ├── css/
@@ -149,7 +164,35 @@ phoneide/
         ├── search.js   # 全局搜索与替换
         ├── terminal.js # 代码运行与输出
         └── chat.js     # LLM 对话与 Agent 工具执行
+└── android/            # Android APK 项目
+    ├── app/src/main/
+    │   ├── java/com/phoneide/
+    │   │   ├── MainActivity.kt       # WebView IDE 界面
+    │   │   ├── TerminalActivity.kt    # 内置终端
+    │   │   ├── SetupActivity.kt      # 首次设置向导
+    │   │   ├── ServerService.kt      # Flask 后台服务
+    │   │   └── PhoneIDEApp.kt        # 应用全局配置
+    │   └── res/                       # 布局、图标、主题
+    ├── .github/workflows/build.yml   # CI/CD 自动构建
+    └── app/build.gradle.kts          # Gradle 构建配置
 ```
+
+## 构建安卓 APK
+
+如果你想自行构建 APK，需要 JDK 17+ 和 Android SDK：
+
+```bash
+# 方式一：使用构建脚本
+./build_apk.sh debug
+./build_apk.sh release
+
+# 方式二：手动构建
+cd android
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+也可以使用 GitHub Actions 自动构建：推送代码到 main 分支后会自动构建，生成的 APK 会出现在 [Releases](https://github.com/ctz168/phoneide/releases) 页面。
 
 ## 技术栈
 
@@ -158,6 +201,8 @@ phoneide/
 - **编辑器**: CodeMirror 5
 - **实时通信**: Server-Sent Events (SSE)
 - **AI 集成**: OpenAI 兼容 API 协议
+- **Android**: Kotlin + WebView + Material Design
+- **CI/CD**: GitHub Actions
 
 ## 许可证
 
