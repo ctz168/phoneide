@@ -443,6 +443,91 @@ const AppManager = (() => {
         }
     }
 
+    // ── Theme Management ──
+    let currentTheme = 'dark';
+    const themes = [
+        { id: 'dark', name: 'Dark (Dracula)', color: '#1e1e2e' },
+        { id: 'claude', name: 'Claude (Warm)', color: '#FAF9F6' },
+    ];
+
+    function initTheme() {
+        const toolbar = document.getElementById('toolbar-actions');
+        if (!toolbar) return;
+
+        // Create theme button
+        const themeBtn = document.createElement('button');
+        themeBtn.id = 'btn-theme';
+        themeBtn.title = '切换主题';
+        themeBtn.textContent = '🎨';
+
+        // Create theme menu
+        const menu = document.createElement('div');
+        menu.className = 'theme-menu';
+        menu.id = 'theme-menu';
+        themes.forEach(t => {
+            const btn = document.createElement('button');
+            btn.dataset.theme = t.id;
+            btn.innerHTML = `<span class="theme-dot" style="background:${t.color};${t.id === 'claude' ? 'border-color:#D4C5B0;' : ''}"></span>${t.name}`;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setTheme(t.id);
+                menu.classList.remove('show');
+            });
+            menu.appendChild(btn);
+        });
+
+        themeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            menu.classList.toggle('show');
+        });
+
+        document.addEventListener('click', () => {
+            menu.classList.remove('show');
+        });
+
+        toolbar.insertBefore(themeBtn, toolbar.firstChild);
+        toolbar.parentElement.appendChild(menu);
+    }
+
+    function setTheme(themeId) {
+        currentTheme = themeId;
+        document.documentElement.setAttribute('data-theme', themeId === 'dark' ? '' : themeId);
+        if (themeId === 'dark') document.documentElement.removeAttribute('data-theme');
+
+        // Update active state in menu
+        document.querySelectorAll('#theme-menu button').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.theme === themeId);
+        });
+
+        // Save theme to config
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme: themeId }),
+        }).then(r => r.json()).catch(() => {});
+
+        // Refresh CodeMirror
+        if (window.EditorManager && EditorManager.getEditor) {
+            const ed = EditorManager.getEditor();
+            if (ed) ed.refresh();
+        }
+    }
+
+    async function loadTheme() {
+        try {
+            const resp = await fetch('/api/config');
+            if (resp.ok) {
+                const config = await resp.json();
+                if (config.theme && config.theme !== 'dark') {
+                    document.documentElement.setAttribute('data-theme', config.theme);
+                    currentTheme = config.theme;
+                }
+            }
+        } catch (e) {
+            // Use default dark theme
+        }
+    }
+
     // ── Prevent unwanted behaviors ──
     function initMobileFixes() {
         // Prevent pull-to-refresh
@@ -491,6 +576,8 @@ const AppManager = (() => {
         initAutoSave();
         initResize();
         initMobileFixes();
+        initTheme();
+        await loadTheme();
 
         // Init modules (order matters)
         try {
@@ -507,6 +594,7 @@ const AppManager = (() => {
                 if (config.font_size && window.EditorManager) {
                     EditorManager.setFontSize(config.font_size);
                 }
+                // Theme already loaded in loadTheme() above
             }
 
             // Load compilers

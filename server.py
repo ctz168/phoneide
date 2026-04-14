@@ -23,7 +23,10 @@ from flask import Flask, jsonify, request, send_from_directory, send_file, Respo
 from flask_cors import CORS
 
 # ==================== Config ====================
-app = Flask(__name__, static_folder='static', static_url_path='')
+# Get absolute path of the server script directory
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__, static_folder=os.path.join(SERVER_DIR, 'static'), static_url_path='')
 CORS(app)
 
 WORKSPACE = os.environ.get('PHONEIDE_WORKSPACE', os.path.expanduser('~/phoneide_workspace'))
@@ -250,11 +253,11 @@ def handle_error(f):
 # Serve frontend
 @app.route('/')
 def index():
-    return send_from_directory('static', 'index.html')
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/<path:path>')
 def static_files(path):
-    return send_from_directory('static', path)
+    return send_from_directory(app.static_folder, path)
 
 # ---- Config APIs ----
 @app.route('/api/config', methods=['GET'])
@@ -265,7 +268,9 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 @handle_error
 def update_config():
-    config = request.json
+    data = request.json
+    config = load_config()
+    config.update(data)
     save_config(config)
     if config.get('workspace'):
         os.makedirs(config['workspace'], exist_ok=True)
@@ -404,7 +409,8 @@ def save_file():
         return jsonify({'error': 'Access denied'}), 403
 
     if not os.path.exists(target) and not create:
-        return jsonify({'error': 'File not found'}), 404
+        # Auto-create file if it doesn't exist (IDE behavior)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(target, 'w', encoding='utf-8') as f:
@@ -522,7 +528,7 @@ def execute_code():
 
 def shlex_quote(s):
     """Simple shell quoting"""
-    return f"'{s.replace(\"'\", \"'\\''\")}'"
+    return "'" + s.replace("'", "'\\''") + "'"
 
 @app.route('/api/run/stop', methods=['POST'])
 @handle_error
@@ -772,7 +778,10 @@ def git_checkout():
 @app.route('/api/git/add', methods=['POST'])
 @handle_error
 def git_add():
-    data = request.json
+    try:
+        data = request.json or {}
+    except:
+        data = {}
     paths = data.get('paths', [])
     if not paths:
         r = git_cmd('add -A')
@@ -784,7 +793,10 @@ def git_add():
 @app.route('/api/git/commit', methods=['POST'])
 @handle_error
 def git_commit():
-    data = request.json
+    try:
+        data = request.json or {}
+    except:
+        data = {}
     message = data.get('message', '')
     if not message:
         return jsonify({'error': 'Commit message required'}), 400

@@ -1265,3 +1265,188 @@ button, .file-item, .search-result-item, .git-change-item {
     -webkit-user-select: none;
     user-select: none;
 }
+
+/* ==================== Theme: Claude (Warm Cream) ==================== */
+[data-theme="claude"] {
+    --bg-primary: #FAF9F6;
+    --bg-secondary: #F5F0E8;
+    --bg-tertiary: #EDE8DB;
+    --bg-surface: #FFFFFF;
+    --bg-hover: #E8E2D6;
+    --bg-active: #D4C5B0;
+    --text-primary: #2D2319;
+    --text-secondary: #5C4A3A;
+    --text-muted: #8B7355;
+    --accent: #C4621A;
+    --accent-hover: #A8510F;
+    --green: #2D7D46;
+    --red: #C0392B;
+    --yellow: #B8860B;
+    --orange: #D97706;
+    --blue: #2563EB;
+    --mauve: #7C3AED;
+    --teal: #0D9488;
+    --border: #D4C5B0;
+    --border-light: #C4B5A0;
+}
+
+[data-theme="claude"] .CodeMirror {
+    background: #FAF9F6 !important;
+    color: #2D2319 !important;
+}
+[data-theme="claude"] .CodeMirror-gutters {
+    background: #F5F0E8 !important;
+    border-right-color: #D4C5B0 !important;
+}
+[data-theme="claude"] .CodeMirror-linenumber {
+    color: #8B7355 !important;
+}
+[data-theme="claude"] .CodeMirror-activeline-background {
+    background: rgba(212, 197, 176, 0.35) !important;
+}
+[data-theme="claude"] .CodeMirror-cursor {
+    border-left-color: #C4621A !important;
+}
+[data-theme="claude"] .CodeMirror-selected {
+    background: rgba(196, 98, 26, 0.15) !important;
+}
+[data-theme="claude"] .CodeMirror-matchingbracket {
+    color: #2D7D46 !important;
+    background: rgba(45, 125, 70, 0.15) !important;
+    border-bottom-color: #2D7D46 !important;
+}
+[data-theme="claude"] .CodeMirror-dialog {
+    background: #FFFFFF !important;
+    color: #2D2319 !important;
+    border-bottom-color: #D4C5B0 !important;
+}
+[data-theme="claude"] .CodeMirror-dialog input {
+    background: #FAF9F6 !important;
+    color: #2D2319 !important;
+    border-color: #D4C5B0 !important;
+}
+/* Claude theme syntax highlighting */
+[data-theme="claude"] .cm-s-dracula .cm-keyword { color: #7C3AED; font-weight: bold; }
+[data-theme="claude"] .cm-s-dracula .cm-atom { color: #C0392B; }
+[data-theme="claude"] .cm-s-dracula .cm-number { color: #B8860B; }
+[data-theme="claude"] .cm-s-dracula .cm-def { color: #2563EB; }
+[data-theme="claude"] .cm-s-dracula .cm-variable { color: #2D2319; }
+[data-theme="claude"] .cm-s-dracula .cm-variable-2 { color: #0D9488; }
+[data-theme="claude"] .cm-s-dracula .cm-variable-3, [data-theme="claude"] .cm-s-dracula .cm-type { color: #D97706; }
+[data-theme="claude"] .cm-s-dracula .cm-property { color: #5C4A3A; }
+[data-theme="claude"] .cm-s-dracula .cm-operator { color: #7C3AED; }
+[data-theme="claude"] .cm-s-dracula .cm-comment { color: #8B7355; font-style: italic; }
+[data-theme="claude"] .cm-s-dracula .cm-string { color: #2D7D46; }
+[data-theme="claude"] .cm-s-dracula .cm-string-2 { color: #0D9488; }
+[data-theme="claude"] .cm-s-dracula .cm-meta { color: #5C4A3A; }
+[data-theme="claude"] .cm-s-dracula .cm-qualifier { color: #B8860B; }
+[data-theme="claude"] .cm-s-dracula .cm-builtin { color: #2563EB; }
+[data-theme="claude"] .cm-s-dracula .cm-bracket { color: #5C4A3A; }
+[data-theme="claude"] .cm-s-dracula .cm-tag { color: #C0392B; }
+[data-theme="claude"] .cm-s-dracula .cm-attribute { color: #D97706; }
+[data-theme="claude"] .cm-s-dracula .cm-header { color: #7C3AED; font-weight: bold; }
+[data-theme="claude"] .cm-s-dracula .cm-hr { color: #D4C5B0; }
+[data-theme="claude"] .cm-s-dracula .cm-link { color: #2563EB; text-decoration: underline; }
+[data-theme="claude"] .cm-s-dracula .cm-error { color: #C0392B; }
+[data-theme="claude"] .CodeMirror-foldmarker {
+    color: #8B7355;
+    text-shadow: none;
+    font-family: inherit;
+}
+[data-theme="claude"] .CodeMirror-foldgutter { width: 14px; }
+[data-theme="claude"] .CodeMirror-foldgutter-open,
+[data-theme="claude"] .CodeMirror-foldgutter-folded { color: #8B7355; }
+[data-theme="claude"] .CodeMirror-cursor { border-left-color: #C4621A !important; }
+
+/* Claude theme chat bubbles */
+[data-theme="claude"] .chat-msg.user {
+    background: #C4621A;
+    color: #FFFFFF;
+}
+[data-theme="claude"] .chat-msg.user .chat-time {
+    color: rgba(255,255,255,0.65);
+}
+[data-theme="claude"] .chat-msg.assistant {
+    background: #FFFFFF;
+    color: #2D2319;
+    border: 1px solid #D4C5B0;
+}
+[data-theme="claude"] .chat-msg.tool {
+    background: rgba(124, 58, 237, 0.08);
+    border-color: rgba(124, 58, 237, 0.25);
+}
+[data-theme="claude"] .chat-msg.error {
+    background: rgba(192, 57, 43, 0.08);
+    border-color: rgba(192, 57, 43, 0.25);
+}
+[data-theme="claude"] .chat-msg pre {
+    background: #F5F0E8;
+}
+[data-theme="claude"] .chat-msg code {
+    background: #EDE8DB;
+}
+[data-theme="claude"] .chat-msg .tool-name {
+    color: #7C3AED;
+}
+[data-theme="claude"] .chat-typing {
+    background: #FFFFFF;
+    border: 1px solid #D4C5B0;
+}
+
+/* Claude theme output panel */
+[data-theme="claude"] .output-line.stdout { color: #2D2319; }
+[data-theme="claude"] .output-line.stderr { color: #C0392B; }
+[data-theme="claude"] .output-line.error { color: #C0392B; }
+[data-theme="claude"] .output-line.status { color: #8B7355; }
+[data-theme="claude"] .output-line.info { color: #2563EB; }
+
+/* Theme selector button */
+#btn-theme {
+    position: relative;
+}
+.theme-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    z-index: 300;
+    min-width: 140px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    display: none;
+}
+.theme-menu.show {
+    display: block;
+}
+.theme-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+.theme-menu button:hover,
+.theme-menu button:active {
+    background: var(--bg-hover);
+}
+.theme-menu button.active {
+    color: var(--accent);
+    font-weight: 600;
+}
+.theme-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+    border: 1px solid var(--border);
+}
