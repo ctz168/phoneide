@@ -153,7 +153,7 @@ class SetupActivity : AppCompatActivity() {
                             setupActions.visibility = View.VISIBLE
                             btnRetry.visibility = View.VISIBLE
                             btnContinue.visibility = View.VISIBLE
-                            btnContinue.text = "跳过（进终端）"
+                            (btnContinue as? android.widget.Button)?.text = "跳过（进终端）"
                         }
                         return@launch
                     }
