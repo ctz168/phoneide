@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.*
 
 class SetupActivity : AppCompatActivity() {
@@ -92,26 +93,45 @@ class SetupActivity : AppCompatActivity() {
     private fun runSetup() {
         scope.launch {
             try {
-                // Step 1: Initialize ProcessManager
+                // Step 1: Initialize ProcessManager (sets up proot binary)
                 updateStatus("正在初始化...")
-                appendLog("[1/4] 初始化 ProcessManager...")
+                appendLog("[1/5] 初始化 ProcessManager...")
                 processManager.initialize()
 
                 if (!File(processManager.getProotBin()).exists()) {
                     appendLog("  proot 二进制文件未找到!")
                     appendLog("  请确保 APK 构建时包含了 jniLibs 中的 libproot.so")
-                    appendLog("  运行 scripts/fetch-proot-binaries.sh 后重新构建")
                     showActions(btnRetry)
                     return@launch
                 }
                 appendLog("  proot 就绪 ✓")
 
-                // Step 2: Check if rootfs already exists
-                appendLog("[2/4] 检查 Ubuntu rootfs...")
+                // Step 2: Extract IDE files from APK assets (independent of rootfs)
+                updateStatus("正在提取 IDE 文件...")
+                appendLog("[2/5] 提取内置 IDE 文件...")
+                val hostIdeDir = processManager.getIdeDir()
+                val ideServerPy = File("$hostIdeDir/server.py")
+                val ideIndexHtml = File("$hostIdeDir/static/index.html")
+
+                if (!ideServerPy.exists() || !ideIndexHtml.exists()) {
+                    appendLog("  从 APK 内置资源提取...")
+                    copyIDEFromAssets(hostIdeDir)
+                }
+
+                if (ideServerPy.exists() && ideIndexHtml.exists()) {
+                    appendLog("  IDE 文件就绪 ✓ (${ideServerPy.length() / 1024}KB)")
+                } else {
+                    appendLog("  警告: IDE 文件提取不完整!")
+                    appendLog("  server.py: ${ideServerPy.exists()}, index.html: ${ideIndexHtml.exists()}")
+                    Log.e(TAG, "IDE files missing - server.py=${ideServerPy.exists()}, index.html=${ideIndexHtml.exists()}")
+                }
+
+                // Step 3: Check if rootfs already exists
+                appendLog("[3/5] 检查 Ubuntu rootfs...")
                 if (processManager.isRootfsReady()) {
                     appendLog("  Ubuntu rootfs 已存在 ✓")
                 } else {
-                    // Full bootstrap: download + extract + configure
+                    // Full bootstrap: download + extract + configure + install deps
                     appendLog("  需要下载和配置 Ubuntu rootfs...")
                     appendLog("  首次安装可能需要 5-10 分钟")
 
@@ -133,38 +153,28 @@ class SetupActivity : AppCompatActivity() {
                     appendLog("  Ubuntu rootfs 配置完成 ✓")
                 }
 
-                // Step 3: Copy IDE files into rootfs
-                updateStatus("正在复制 IDE 文件...")
-                appendLog("[3/4] 设置 IDE 文件...")
-
-                // Check if IDE files exist in the host directory
-                val hostIdeDir = processManager.getIdeDir()
-                if (File(hostIdeDir).listFiles()?.isEmpty() != false) {
-                    appendLog("  IDE 文件目录为空，尝试从内置资源复制...")
-                    // Copy from assets (if bundled) or download
-                    copyIDEFromAssets()
-                }
-
-                // Copy IDE files into rootfs
-                val result = processManager.runInProot(
-                    "ls /root/phoneide/server.py 2>/dev/null && echo 'EXISTS'",
-                    timeoutMs = 10_000
-                )
-                if (result.stdout.contains("EXISTS")) {
-                    appendLog("  IDE 文件就绪 ✓")
-                } else {
-                    appendLog("  警告: IDE 文件未找到，将在首次启动时下载")
-                }
-
-                // Step 4: Verify server
+                // Step 4: Verify Python/Flask inside proot
                 updateStatus("正在验证...")
-                appendLog("[4/4] 验证环境...")
+                appendLog("[4/5] 验证 Python 环境...")
+                try {
+                    val testResult = processManager.runInProot(
+                        "python3 --version 2>&1 && pip3 show flask 2>/dev/null | head -1",
+                        timeoutMs = 30_000
+                    )
+                    if (testResult.success) {
+                        appendLog("  ${testResult.stdout.trim()}")
+                    } else {
+                        appendLog("  Python 环境检查未通过（可稍后修复）")
+                    }
+                } catch (e: Exception) {
+                    appendLog("  Python 检查跳过: ${e.message}")
+                }
 
-                val testResult = processManager.runInProot(
-                    "python3 --version && pip3 show flask 2>/dev/null | head -1",
-                    timeoutMs = 30_000
-                )
-                appendLog("  ${testResult.stdout.trim()}")
+                // Step 5: Final check
+                appendLog("[5/5] 最终检查...")
+                appendLog("  proot: ${if (File(processManager.getProotBin()).exists()) "✓" else "✗"}")
+                appendLog("  rootfs: ${if (processManager.isRootfsReady()) "✓" else "✗"}")
+                appendLog("  IDE: ${if (ideServerPy.exists()) "✓" else "✗"}")
 
                 appendLog("")
                 appendLog("=============================")
@@ -183,10 +193,70 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    private fun copyIDEFromAssets() {
-        // If IDE files are bundled in assets, copy them
-        // For now, this is handled by BootstrapManager.setupIDEFiles()
-        // In a future update, we could bundle server.py in assets/
+    /**
+     * Extract IDE files from APK assets/ide/ to hostIdeDir.
+     * This is independent of bootstrap - works even without rootfs.
+     */
+    private fun copyIDEFromAssets(targetDir: String) {
+        try {
+            val target = File(targetDir)
+            target.mkdirs()
+            extractAssetsDir("ide", target)
+            appendLog("  提取完成: ${countFiles(target)} 个文件")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract IDE from assets", e)
+            appendLog("  提取失败: ${e.message}")
+        }
+    }
+
+    /**
+     * Recursively extract a directory from APK assets.
+     */
+    private fun extractAssetsDir(assetPath: String, targetDir: File) {
+        val am = assets
+        val entries = am.list(assetPath) ?: return
+
+        for (entry in entries) {
+            val fullAssetPath = "$assetPath/$entry"
+            val targetFile = File(targetDir, entry)
+
+            // Try to list to determine if directory or file
+            val subEntries = try { am.list(fullAssetPath) } catch (e: Exception) { null }
+
+            if (subEntries != null && subEntries.isNotEmpty()) {
+                // Directory - recurse
+                targetFile.mkdirs()
+                extractAssetsDir(fullAssetPath, targetFile)
+            } else {
+                // File - copy bytes
+                targetFile.parentFile?.mkdirs()
+                try {
+                    am.open(fullAssetPath).use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            val buf = ByteArray(8192)
+                            var len: Int
+                            while (input.read(buf).also { len = it } != -1) {
+                                output.write(buf, 0, len)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to extract: $fullAssetPath - ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Count files recursively in a directory.
+     */
+    private fun countFiles(dir: File): Int {
+        var count = 0
+        dir.listFiles()?.forEach { file ->
+            if (file.isDirectory) count += countFiles(file)
+            else count++
+        }
+        return count
     }
 
     override fun onDestroy() {

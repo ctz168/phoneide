@@ -11,8 +11,8 @@ android {
         applicationId = "com.phoneide"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "2.0.3"
+        versionCode = 6
+        versionName = "2.0.4"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
