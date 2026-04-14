@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PhoneIDE</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- CodeMirror 6 CSS from CDN -->
+    <!-- Use these CDN links for CodeMirror 6: -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.css">
+</head>
+<body>
+    <!-- Top Toolbar -->
+    <header id="toolbar">
+        <button id="btn-menu" title="文件">☰</button>
+        <span id="file-name">未打开文件</span>
+        <div id="toolbar-actions">
+            <button id="btn-undo" title="撤销">↩</button>
+            <button id="btn-redo" title="重做">↪</button>
+            <button id="btn-save" title="保存">💾</button>
+            <button id="btn-run" title="运行">▶</button>
+            <button id="btn-stop" title="停止" style="display:none">⏹</button>
+            <button id="btn-chat" title="AI助手">🤖</button>
+        </div>
+    </header>
+
+    <!-- Left Sidebar -->
+    <div id="sidebar-left" class="sidebar left">
+        <div id="sidebar-left-header">
+            <h3>PhoneIDE</h3>
+            <button id="close-left">✕</button>
+        </div>
+        <!-- Tabs -->
+        <div id="left-tabs">
+            <button class="tab active" data-tab="files">📁 文件</button>
+            <button class="tab" data-tab="git">🔀 Git</button>
+            <button class="tab" data-tab="search">🔍 搜索</button>
+            <button class="tab" data-tab="debug">🐛 调试</button>
+        </div>
+        <!-- Tab Panels -->
+        <div id="left-panels">
+            <!-- Files Panel -->
+            <div id="panel-files" class="panel active">
+                <div class="panel-toolbar">
+                    <button id="btn-open-folder" title="打开文件夹">📂</button>
+                    <button id="btn-new-file" title="新建文件">➕</button>
+                    <button id="btn-new-folder" title="新建文件夹">📁+</button>
+                    <input type="text" id="workspace-path" placeholder="工作区路径" readonly>
+                </div>
+                <div id="file-tree"></div>
+            </div>
+            <!-- Git Panel -->
+            <div id="panel-git" class="panel">
+                <div class="panel-toolbar">
+                    <button id="git-clone" title="克隆">📥 克隆</button>
+                    <button id="git-pull" title="拉取">⬇ 拉取</button>
+                    <button id="git-push" title="推送">⬆ 推送</button>
+                    <button id="git-sync" title="同步">🔄</button>
+                    <button id="git-refresh" title="刷新">🔃</button>
+                </div>
+                <div id="git-branch-info">
+                    <span id="git-current-branch">-</span>
+                    <span id="git-status-count"></span>
+                </div>
+                <div id="git-changes-list"></div>
+                <div id="git-commit-area">
+                    <textarea id="git-commit-msg" placeholder="提交信息..." rows="2"></textarea>
+                    <button id="git-commit-btn">提交</button>
+                </div>
+                <div id="git-log-list"></div>
+            </div>
+            <!-- Search Panel -->
+            <div id="panel-search" class="panel">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="搜索...">
+                    <button id="search-btn">搜索</button>
+                </div>
+                <div class="search-options">
+                    <label><input type="checkbox" id="search-case"> 区分大小写</label>
+                    <label><input type="checkbox" id="search-regex"> 正则</label>
+                    <input type="text" id="search-file-pattern" placeholder="文件过滤 (*.py)">
+                </div>
+                <div id="search-results"></div>
+            </div>
+            <!-- Debug Panel -->
+            <div id="panel-debug" class="panel">
+                <div class="panel-toolbar">
+                    <select id="compiler-select">
+                        <option value="python3">Python 3</option>
+                    </select>
+                    <button id="venv-btn" title="虚拟环境">🐍</button>
+                </div>
+                <div id="debug-config">
+                    <div id="venv-info">
+                        <span>虚拟环境: </span><span id="current-venv">未设置</span>
+                    </div>
+                    <button id="create-venv-btn">创建虚拟环境</button>
+                    <button id="install-pkg-btn">安装包</button>
+                </div>
+                <div id="debug-breakpoints"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Editor Area -->
+    <main id="main-area">
+        <div id="editor-toolbar">
+            <input type="text" id="editor-search" placeholder="在文件中查找..." style="display:none">
+            <input type="text" id="editor-replace" placeholder="替换..." style="display:none">
+            <button id="editor-search-btn" title="查找">🔍</button>
+            <button id="btn-md-toggle" title="切换预览" style="display:none">📖</button>
+        </div>
+        <div id="editor-container">
+            <div id="markdown-preview" class="hidden" style="display:none;"></div>
+            <textarea id="code-editor"></textarea>
+        </div>
+        <!-- Bottom Panel (Debug Tools) -->
+        <div id="bottom-panel" class="hidden">
+            <div id="bottom-panel-header">
+                <div id="bottom-tabs">
+                    <button class="btab active" data-btab="output">🖥 输出</button>
+                    <button class="btab" data-btab="console">📋 控制台</button>
+                    <button class="btab" data-btab="network">🌐 网络</button>
+                    <button class="btab" data-btab="errors">⚠ 错误</button>
+                    <button class="btab" data-btab="http">📡 HTTP</button>
+                    <button class="btab" data-btab="procs">⚙ 进程</button>
+                </div>
+                <button id="bottom-panel-close">✕</button>
+                <button id="bottom-panel-clear">🗑</button>
+            </div>
+            <div id="bottom-panels">
+                <!-- Output (original terminal output) -->
+                <div id="bpanel-output" class="bpanel active">
+                    <div id="output-content"></div>
+                </div>
+                <!-- Console -->
+                <div id="bpanel-console" class="bpanel">
+                    <div id="debug-console-content"></div>
+                </div>
+                <!-- Network -->
+                <div id="bpanel-network" class="bpanel">
+                    <div id="debug-network-content" style="flex:1;overflow-y:auto;padding:6px 8px;font-family:var(--font-mono);font-size:11px;"></div>
+                </div>
+                <!-- Errors -->
+                <div id="bpanel-errors" class="bpanel">
+                    <div id="debug-errors-content" style="flex:1;overflow-y:auto;padding:6px 8px;font-family:var(--font-mono);font-size:11px;"></div>
+                </div>
+                <!-- HTTP Client -->
+                <div id="bpanel-http" class="bpanel">
+                    <div id="http-client-panel">
+                        <div class="http-row">
+                            <select id="http-method">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="PATCH">PATCH</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                            <input type="text" id="http-url" placeholder="http://localhost:1239/api/...">
+                            <button id="http-send">发送</button>
+                        </div>
+                        <div class="http-row">
+                            <textarea id="http-body" placeholder='请求体 (JSON)' rows="3" style="width:100%;"></textarea>
+                        </div>
+                        <div id="http-status"></div>
+                        <div id="http-response"></div>
+                    </div>
+                </div>
+                <!-- Process Manager -->
+                <div id="bpanel-procs" class="bpanel">
+                    <div id="process-manager">
+                        <table>
+                            <thead><tr><th>ID</th><th>状态</th><th>运行时间</th><th>操作</th></tr></thead>
+                            <tbody id="process-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div id="bottom-panel-resize"></div>
+        </div>
+    </main>
+
+    <!-- Right Sidebar (Chat) -->
+    <div id="sidebar-right" class="sidebar right">
+        <div id="sidebar-right-header">
+            <h3>🤖 AI 助手</h3>
+            <div>
+                <button id="chat-clear" title="清空记录">🗑</button>
+                <button id="close-right">✕</button>
+            </div>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-area">
+            <div id="chat-execute-status"></div>
+            <textarea id="chat-input" placeholder="输入消息... (Enter发送)" rows="2"></textarea>
+            <button id="chat-send">发送</button>
+        </div>
+    </div>
+
+    <!-- Server Management Bar -->
+    <div id="server-mgmt-bar">
+        <div id="server-status-indicator">
+            <span id="server-status-dot" class="status-dot running" title="Server running"></span>
+            <span id="server-status-text">Running</span>
+        </div>
+        <div id="server-mgmt-actions">
+            <button id="btn-server-restart" title="Restart Server">🔄 Restart</button>
+            <button id="btn-server-logs" title="Server Logs">📋 Logs</button>
+            <button id="btn-check-updates" title="Check Updates">⬆ Updates</button>
+        </div>
+    </div>
+
+    <!-- Log Viewer Panel -->
+    <div id="log-viewer-panel" class="hidden">
+        <div id="log-viewer-header">
+            <span>📋 Server Logs</span>
+            <div>
+                <button id="log-viewer-refresh" title="Refresh">🔃</button>
+                <button id="log-viewer-clear" title="Clear">🗑</button>
+                <button id="log-viewer-close" title="Close">✕</button>
+            </div>
+        </div>
+        <div id="log-viewer-content"></div>
+    </div>
+
+    <!-- Update Dialog -->
+    <div id="update-dialog-overlay" class="hidden">
+        <div id="update-dialog">
+            <div id="update-dialog-title">⬆ Updates</div>
+            <div id="update-dialog-body">
+                <div id="update-current-version"></div>
+                <div id="update-status"></div>
+                <div id="update-info" class="hidden"></div>
+            </div>
+            <div id="update-dialog-actions">
+                <button id="update-check-btn" class="btn-secondary">Check for Updates</button>
+                <button id="update-apply-btn" class="btn-primary hidden">Update Now</button>
+                <button id="update-close-btn" class="btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlays/Modals -->
+    <div id="overlay" class="hidden"></div>
+
+    <!-- Dialogs -->
+    <div id="dialog-overlay" class="hidden">
+        <div id="dialog">
+            <div id="dialog-title"></div>
+            <div id="dialog-body"></div>
+            <div id="dialog-buttons"></div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="hidden"></div>
+
+    <!-- Server Management Styles -->
+    <style>
+        /* Server Management Bar */
+        #server-mgmt-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 36px;
+            background: var(--bg-surface, #1a1a2e);
+            border-top: 1px solid var(--border, #2a2a4a);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            z-index: 400;
+            font-size: 11px;
+            color: var(--text-secondary, #aaa);
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+            gap: 8px;
+        }
+        #server-status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .status-dot.running {
+            background: var(--green, #50fa7b);
+            box-shadow: 0 0 6px var(--green, #50fa7b);
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+        .status-dot.stopped {
+            background: var(--red, #ff5555);
+            box-shadow: 0 0 6px var(--red, #ff5555);
+        }
+        .status-dot.checking {
+            background: var(--yellow, #f1fa8c);
+            animation: spin 1s linear infinite;
+        }
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        #server-status-text {
+            font-family: var(--font-mono, monospace);
+            font-size: 10px;
+        }
+        #server-mgmt-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        #server-mgmt-actions button {
+            border: none;
+            background: none;
+            color: var(--text-secondary, #aaa);
+            font-size: 11px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm, 4px);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-family: var(--font-mono, monospace);
+            transition: background 0.15s, color 0.15s;
+        }
+        #server-mgmt-actions button:hover {
+            background: var(--bg-hover, #2a2a4a);
+            color: var(--text-primary, #f8f8f2);
+        }
+        #server-mgmt-actions button:active {
+            background: var(--bg-active, #3a3a5a);
+            transform: scale(0.95);
+        }
+
+        /* Log Viewer Panel */
+        #log-viewer-panel {
+            position: fixed;
+            bottom: 36px;
+            left: 0;
+            right: 0;
+            height: 250px;
+            background: var(--bg-surface, #1a1a2e);
+            border-top: 1px solid var(--border, #2a2a4a);
+            display: flex;
+            flex-direction: column;
+            z-index: 399;
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+            animation: slideUp 0.2s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        #log-viewer-panel.hidden {
+            display: none;
+        }
+        #log-viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary, #f8f8f2);
+            border-bottom: 1px solid var(--border, #2a2a4a);
+            flex-shrink: 0;
+        }
+        #log-viewer-header div {
+            display: flex;
+            gap: 4px;
+        }
+        #log-viewer-header button {
+            width: 26px;
+            height: 26px;
+            border: none;
+            background: none;
+            color: var(--text-secondary, #aaa);
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: var(--radius-sm, 4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #log-viewer-header button:hover {
+            background: var(--bg-hover, #2a2a4a);
+            color: var(--text-primary, #f8f8f2);
+        }
+        #log-viewer-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+            font-family: var(--font-mono, monospace);
+            font-size: 11px;
+            color: var(--text-secondary, #aaa);
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.5;
+            -webkit-overflow-scrolling: touch;
+        }
+        #log-viewer-content:empty::before {
+            content: 'No logs yet...';
+            color: var(--text-muted, #666);
+            font-style: italic;
+        }
+
+        /* Update Dialog */
+        #update-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            animation: fadeIn 0.2s ease;
+        }
+        #update-dialog-overlay.hidden {
+            display: none;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        #update-dialog {
+            background: var(--bg-surface, #1a1a2e);
+            border: 1px solid var(--border, #2a2a4a);
+            border-radius: var(--radius, 8px);
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        #update-dialog-title {
+            padding: 14px 16px 8px;
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text-primary, #f8f8f2);
+        }
+        #update-dialog-body {
+            padding: 8px 16px 14px;
+            min-height: 60px;
+        }
+        #update-current-version {
+            font-size: 12px;
+            color: var(--text-muted, #666);
+            font-family: var(--font-mono, monospace);
+        }
+        #update-status {
+            font-size: 13px;
+            color: var(--text-secondary, #aaa);
+            margin-top: 8px;
+        }
+        #update-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: var(--radius-sm, 4px);
+            font-size: 12px;
+            font-family: var(--font-mono, monospace);
+            color: var(--text-secondary, #aaa);
+            line-height: 1.5;
+        }
+        #update-info.hidden {
+            display: none;
+        }
+        .update-progress-bar {
+            height: 4px;
+            background: var(--bg-hover, #2a2a4a);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .update-progress-fill {
+            height: 100%;
+            background: var(--accent, #bd93f9);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        #update-dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 8px 16px 14px;
+        }
+        #update-dialog-actions button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: var(--radius-sm, 4px);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.15s, transform 0.1s;
+        }
+        #update-dialog-actions button:active {
+            transform: scale(0.95);
+        }
+        .btn-primary {
+            background: var(--accent, #bd93f9);
+            color: var(--bg-primary, #1e1e2e);
+        }
+        .btn-primary:hover {
+            filter: brightness(1.1);
+        }
+        .btn-secondary {
+            background: var(--bg-hover, #2a2a4a);
+            color: var(--text-secondary, #aaa);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-active, #3a3a5a);
+            color: var(--text-primary, #f8f8f2);
+        }
+        .hidden {
+            display: none !important;
+        }
+    </style>
+
+    <!-- CodeMirror 5 JS from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/jump-to-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/indent-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/comment-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/display/placeholder.min.js"></script>
+    <!-- Markdown Renderer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+
+    <!-- App Scripts -->
+    <script src="/js/files.js"></script>
+    <script src="/js/git.js"></script>
+    <script src="/js/search.js"></script>
+    <script src="/js/terminal.js"></script>
+    <script src="/js/chat.js"></script>
+    <script src="/js/editor.js"></script>
+    <script src="/js/debug.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

@@ -398,23 +398,72 @@ class BootstrapManager(
     }
 
     /**
-     * Copy IDE files from host side into the rootfs.
+     * Copy IDE files from APK assets into the rootfs.
+     * First extracts from assets/ide/ to hostIdeDir, then copies into rootfs.
      */
     private fun setupIDEFiles() {
         val hostIdeDir = processManager.getIdeDir()
-        val rootfsDir = processManager.getRootfsDir()
+        val rootIdeDir = "${processManager.getRootfsDir()}/root/phoneide"
 
-        // Create phoneide directory in rootfs
-        val rootIdeDir = "$rootfsDir/root/phoneide"
-        File(rootIdeDir).mkdirs()
-
-        // Copy all files from host IDE dir to rootfs
+        // Step 1: Extract IDE files from APK assets to host directory
         val hostDir = File(hostIdeDir)
-        if (hostDir.exists() && hostDir.isDirectory) {
-            copyDirectory(hostDir, File(rootIdeDir))
+        if (!hostDir.exists() || hostDir.listFiles()?.isEmpty() != false) {
+            hostDir.mkdirs()
+            extractAssetsDir("ide", hostDir)
+            Log.d(TAG, "Extracted IDE files from assets to $hostIdeDir")
         }
 
+        // Step 2: Copy into rootfs (proot bind mount target)
+        File(rootIdeDir).mkdirs()
+        copyDirectory(hostDir, File(rootIdeDir))
         Log.d(TAG, "IDE files copied to $rootIdeDir")
+
+        // Step 3: Verify key files exist
+        val serverPy = File("$rootIdeDir/server.py")
+        val indexHtml = File("$rootIdeDir/static/index.html")
+        if (serverPy.exists() && indexHtml.exists()) {
+            Log.d(TAG, "IDE files verified: server.py + index.html OK")
+        } else {
+            Log.w(TAG, "IDE files incomplete! server.py=${serverPy.exists()}, index.html=${indexHtml.exists()}")
+        }
+    }
+
+    /**
+     * Recursively extract a directory from APK assets to the filesystem.
+     */
+    private fun extractAssetsDir(assetPath: String, targetDir: File) {
+        val assetManager = context.assets
+        val files = assetManager.list(assetPath) ?: return
+
+        for (file in files) {
+            val fullAssetPath = "$assetPath/$file"
+            val targetFile = File(targetDir, file)
+
+            // Check if it's a directory or file by trying to list it
+            val subFiles = try { assetManager.list(fullAssetPath) } catch (e: Exception) { null }
+
+            if (subFiles != null && subFiles.isNotEmpty()) {
+                // It's a directory
+                targetFile.mkdirs()
+                extractAssetsDir(fullAssetPath, targetFile)
+            } else {
+                // It's a file - copy it
+                targetFile.parentFile?.mkdirs()
+                try {
+                    assetManager.open(fullAssetPath).use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(8192)
+                            var len: Int
+                            while (input.read(buffer).also { len = it } != -1) {
+                                output.write(buffer, 0, len)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to extract asset $fullAssetPath: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun copyDirectory(source: File, target: File) {
