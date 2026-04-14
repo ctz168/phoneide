@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://gh-proxy.com",
+    "name": "GitHub加速下载代理- 快速访问GitHub 文件",
+    "snippet": "支持代理访问GitHub 的Releases、Raw、Archive 等资源 · 自动缓存，提升访问速度 · 支持大文件下载，无限制 · 无需配置，直接使用 · 支持HTTPS 安全 ... Read more",
+    "host_name": "gh-proxy.com",
+    "rank": 0,
+    "date": "Apr 14, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/hunshcn/gh-proxy",
+    "name": "hunshcn/gh-proxy: github release、archive以及项目文件的",
+    "snippet": "直接在copy出来的url前加 https://gh.api.99988866.xyz/ 即可. 也可以直接访问，在input输入. 大量使用请自行部署，以上域名仅为演示使用。 访问私有仓库可以通过. Read more",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://cloud.tencent.com/developer/article/2652607",
+    "name": "【转】【2026最新收集】github国内镜像站，高速访问",
+    "snippet": "5 days ago — 推荐最新可用的 GitHub 镜像站，包括直接访问型、文件 加速 型和知名项目专属型，解决访问 GitHub 困难问题。提供gitclone.com全局镜像配置方法，一键 加速 Git ...",
+    "host_name": "cloud.tencent.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://zhuanlan.zhihu.com/p/1925872758098759946",
+    "name": "一键加速你的GitHub 下载：告别龟速，拥抱飞速！",
+    "snippet": "Jul 8, 2025 — 今天，就为大家带来一款神器——gh- proxy ，让你彻底告别 GitHub 下载 龟速时代，体验飞一般的速度！ 项目地址：https:// github .com/hunshcn/gh-proxy. 简介. Read more",
+    "host_name": "zhuanlan.zhihu.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.cnblogs.com/ting1/p/18356265",
+    "name": "畅享GitHub：国内开发者必看的五大加速访问与下载技巧",
+    "snippet": "Aug 13, 2024 — 本文介绍了五种 加速 在国内访问和 下载GitHub 的方法，包括：使用Gitee 平台 加速 克隆代码、修改hosts 文件、使用油猴脚本、通过在线镜像站点、以及 ... Read more",
+    "host_name": "www.cnblogs.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

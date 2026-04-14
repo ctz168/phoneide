@@ -1,11 +1,13 @@
 package com.phoneide
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.*
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -22,12 +24,48 @@ class BootstrapManager(
     companion object {
         private const val TAG = "BootstrapManager"
 
-        // Ubuntu 24.04 rootfs from Termux proot-distro
-        // Using the same source as proot-distro for reliability
-        private const val UBUNTU_ROOTFS_URL = "https://github.com/termux/proot-distro/releases/download/v2.6.0/ubuntu-arm64-v8a-v2.6.0.tar.xz"
-        private const val UBUNTU_ROOTFS_ALT_URL = "https://packages.termux.dev/apt/termux-main/pool/main/p/proot-distro/proot-distro-rootfs-ubuntu_24.04_arm64-v8a.tar.xz"
+        private const val RELEASES_BASE = "https://github.com/termux/proot-distro/releases/download"
 
-        // The rootfs dir is managed by ProcessManager
+        /**
+         * Build the list of rootfs download URLs based on device ABI.
+         * Includes multiple Ubuntu versions and GitHub mirror proxies.
+         */
+        fun getRootfsUrls(): List<String> {
+            val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+            val archSuffix = if (primaryAbi.startsWith("arm64") || primaryAbi == "aarch64") {
+                "aarch64"
+            } else if (primaryAbi.startsWith("armeabi") || primaryAbi.startsWith("arm")) {
+                "arm"
+            } else {
+                // Fallback: try aarch64 first for unknown archs
+                "aarch64"
+            }
+
+            Log.d(TAG, "Detected arch: $primaryAbi -> suffix: $archSuffix")
+
+            val urls = mutableListOf<String>()
+
+            // Ubuntu 24.04 LTS (noble) - most stable, recommended
+            urls.add("$RELEASES_BASE/v4.18.0/ubuntu-noble-$archSuffix-pd-v4.18.0.tar.xz")
+
+            // Ubuntu 25.04 (plucky) - newer
+            urls.add("$RELEASES_BASE/v4.29.0/ubuntu-plucky-$archSuffix-pd-v4.29.0.tar.xz")
+
+            // Ubuntu 25.10 (questing) - latest
+            urls.add("$RELEASES_BASE/v4.30.1/ubuntu-questing-$archSuffix-pd-v4.30.1.tar.xz")
+
+            // GitHub mirror proxies (for users who can't access github.com directly)
+            val ghProxies = listOf(
+                "https://ghfast.top",
+                "https://gh-proxy.com",
+                "https://gh.api.99988866.xyz"
+            )
+            for (proxy in ghProxies) {
+                urls.add("$proxy/$RELEASES_BASE/v4.18.0/ubuntu-noble-$archSuffix-pd-v4.18.0.tar.xz")
+            }
+
+            return urls
+        }
     }
 
     private val isRunning = AtomicBoolean(false)
@@ -115,27 +153,43 @@ class BootstrapManager(
         val rootfsFile = File("$rootfsDir/rootfs.tar.xz")
         File(rootfsDir).mkdirs()
 
-        // Try primary URL, then fallback
-        val urls = listOf(UBUNTU_ROOTFS_URL, UBUNTU_ROOTFS_ALT_URL)
+        val urls = getRootfsUrls()
+        Log.d(TAG, "Will try ${urls.size} URLs for rootfs download")
 
         for ((index, url) in urls.withIndex()) {
+            // Clean up partial download
+            if (rootfsFile.exists()) rootfsFile.delete()
+
             try {
-                reportProgress(5 + index * 15, "Trying mirror ${index + 1}...")
+                val label = if (index < 3) "Ubuntu ${listOf("24.04", "25.04", "25.10")[index]}" else "Proxy ${index - 2}"
+                reportProgress(5, "Trying $label (URL ${index + 1}/${urls.size})...")
+                Log.d(TAG, "Downloading from: $url")
+
                 downloadFile(url, rootfsFile) { bytesRead, totalBytes ->
                     val percent = if (totalBytes > 0) {
                         (10 + (bytesRead.toFloat() / totalBytes * 25)).toInt()
                     } else {
                         10
                     }
-                    reportProgress(percent.coerceAtMost(38),
-                        "Downloading... ${(bytesRead / 1024 / 1024)}MB")
+                    val mb = bytesRead / 1024 / 1024
+                    reportProgress(percent.coerceAtMost(38), "Downloading... ${mb}MB")
                 }
-                return rootfsFile.exists() && rootfsFile.length() > 1_000_000 // At least 1MB
+
+                // Validate: at least 10MB for a valid Ubuntu rootfs
+                if (rootfsFile.exists() && rootfsFile.length() > 10_000_000) {
+                    Log.d(TAG, "Downloaded rootfs: ${rootfsFile.length() / 1024 / 1024}MB from $url")
+                    return true
+                } else {
+                    Log.w(TAG, "Downloaded file too small: ${rootfsFile.length()} bytes, skipping")
+                    if (rootfsFile.exists()) rootfsFile.delete()
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "Download from mirror $index failed: ${e.message}")
+                Log.w(TAG, "Download from URL $index failed: ${e.message}")
+                reportProgress(5, "Mirror $index failed, trying next...")
             }
         }
 
+        Log.e(TAG, "All ${urls.size} download URLs failed")
         return false
     }
 
@@ -145,17 +199,24 @@ class BootstrapManager(
         onProgress: ((Long, Long) -> Unit)? = null
     ) {
         val url = URL(urlString)
-        val connection = url.openConnection()
+        val connection = url.openConnection() as HttpURLConnection
         connection.connectTimeout = 30_000
-        connection.readTimeout = 120_000
+        connection.readTimeout = 300_000  // 5 min timeout for large files (~60MB)
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty("User-Agent", "PhoneIDE/2.0")
         connection.connect()
+
+        val responseCode = connection.responseCode
+        if (responseCode != 200) {
+            throw IOException("HTTP $responseCode for $urlString")
+        }
 
         val totalBytes = connection.contentLength.toLong()
         var bytesRead: Long = 0
 
         connection.inputStream.use { input ->
             targetFile.outputStream().use { output ->
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(16384)  // 16KB buffer for faster download
                 var read: Int
                 while (input.read(buffer).also { read = it } != -1) {
                     output.write(buffer, 0, read)

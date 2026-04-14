@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/termux/proot-distro/releases",
+    "name": "Releases · termux/proot-distro - GitHub",
+    "snippet": "Rootfs for Pardus 'yirmibes'. Nov 27, 2025 · v4.33.2 ; Fedora 43, OpenSUSE Leap 16 and more. Nov 15, 2025 · v4.31.0 ; Alpine 3.22.2, Ubuntu 25.10. Missing: 2024 | Show results with: 2024\nAn utility for managing installations of the Linux distributions in Termux. - Releases · termux/proot-distro.\ntermux/proot-distro .",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/termux/proot-distro",
+    "name": "GitHub - termux/proot-distro: An utility for managing installations of",
+    "snippet": "A Bash script wrapper for utility proot for easy management of chroot-based Linux distribution installations. It does not require root or any special ROM, ... Missing: 2024 | Show results with: 2024",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/xiv3r/termux-proot-distro/releases",
+    "name": "Releases · xiv3r/termux-proot-distro - GitHub",
+    "snippet": "Run Kali Linux and BlackArch using Termux with ... tar.xz. 125 MB Nov 29, 2024. kali-arm64-minimal.tar.xz. 223 MB Nov 27, 2024. kali-rolling_arm64-rootfs-nano. Missing: ubuntu download URL 2025\nRun Kali Linux and BlackArch using Termux with ... tar . xz . 125 MB Nov 29, 2024 . kali-arm64-minimal. tar . xz . 223 MB Nov 27, 2024 . kali-rolling_arm64- rootfs -nano.",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/termux/proot-distro/issues/566",
+    "name": "how do i install rootfs from custom urls without verifying sha256",
+    "snippet": "You may specify a custom URL for downloading the rootfs archive with environment variable PD_OVERRIDE_TARBALL_URL, for example: Optionally ... Missing: 2024 | Show results with: 2024",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://wiki.termux.com/wiki/PRoot",
+    "name": "PRoot - Termux Wiki",
+    "snippet": "PRoot is a user-space implementation of chroot, mount --bind, and binfmt_misc. This means that users don't need any privileges or setup.\nPRoot is a user-space implementation of chroot, mount --bind, and binfmt_misc. This means that users don't need any privileges or setup. Missing: tar. xz URL",
+    "host_name": "wiki.termux.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/LinuxDroidMaster/Termux-Desktops/blob/main/Documentation/proot/ubuntu_proot.md",
+    "name": "Termux-Desktops/Documentation/proot/ubuntu_proot.md at main",
+    "snippet": "Collection of scripts to launch Desktops with audio in Termux X11 and how to use hardware acceleration - Termux-Desktops/Documentation/proot/ubuntu_proot.md ... Missing: rootfs tar. xz URL 2024 2025",
+    "host_name": "github.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/conda-forge/miniforge/issues/568",
+    "name": "Can't install large packages in Termux-proot · Issue #568 - GitHub",
+    "snippet": "This attempt fails at proot-distro install step with the following error: Error: the rootfs of distribution 'daebian' has unexpected structure ( ...",
+    "host_name": "github.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.warriornux.com/install-proot-distro-android",
+    "name": "Install Ubuntu Linux di Android dengan Proot Distro - Warriornux",
+    "snippet": "Proot distro merupakan paket aplikasi yang ada pada repository termux, memungkinkan kita untuk menjalankan distro linux di android tanpa perlu ...",
+    "host_name": "www.warriornux.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/termux/proot-distro/blob/master/proot-distro.sh",
+    "name": "proot-distro/proot-distro.sh at master · termux/proot-distro - GitHub",
+    "snippet": "termux/proot-distro.\ntermux / proot - distro .",
+    "host_name": "github.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://raw.githubusercontent.com/23xvx/Termux-Ubuntu-Installer/main/ubuntu-lts.sh",
+    "name": "https://raw.githubusercontent.com/23xvx/Termux-Ubu",
+    "snippet": "... github.com/termux/proot-distro/releases/download/v4.18.0/ubuntu-noble-aarch64-pd-v4.18.0.tar.xz ... github.com/termux/proot-distro/releases/download/v4 ...\n... github .com/ termux / proot - distro / releases / download /v4.18.0/ ubuntu -noble-aarch64-pd-v4.18.0. tar . xz ... github .com/ termux / proot - distro / releases / download /v4 ...",
+    "host_name": "raw.githubusercontent.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
