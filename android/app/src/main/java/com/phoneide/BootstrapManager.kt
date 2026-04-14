@@ -205,16 +205,16 @@ class BootstrapManager(
                             }
                             entry.isFile -> {
                                 entryFile.parentFile?.mkdirs()
-                                tarIn.getInputStream(entry).use { entryIn ->
-                                    entryFile.outputStream().use { out ->
-                                        entryIn.copyTo(out)
-                                    }
+                                val buf = ByteArray(8192)
+                                var len: Int
+                                while (tarIn.read(buf).also { len = it } != -1) {
+                                    entryFile.appendBytes(buf, 0, len)
                                 }
                                 // Preserve permissions
                                 if (entry.mode > 0) {
                                     try {
-                                        entryFile.setReadable((entry.mode and 0o400) != 0)
-                                        entryFile.setExecutable((entry.mode and 0o100) != 0)
+                                        entryFile.setReadable((entry.mode and 256) != 0)
+                                        entryFile.setExecutable((entry.mode and 64) != 0)
                                     } catch (e: Exception) { }
                                 }
                             }
