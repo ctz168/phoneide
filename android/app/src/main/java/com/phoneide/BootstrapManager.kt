@@ -205,14 +205,16 @@ class BootstrapManager(
                             }
                             entry.isFile -> {
                                 entryFile.parentFile?.mkdirs()
-                                entryFile.outputStream().use { out ->
-                                    tarIn.copyEntryContents(out as java.io.OutputStream)
+                                tarIn.getInputStream(entry).use { entryIn ->
+                                    entryFile.outputStream().use { out ->
+                                        entryIn.copyTo(out)
+                                    }
                                 }
                                 // Preserve permissions
                                 if (entry.mode > 0) {
                                     try {
-                                        entryFile.setReadable((entry.mode and 0400) != 0)
-                                        entryFile.setExecutable((entry.mode and 0100) != 0)
+                                        entryFile.setReadable((entry.mode and 0o400) != 0)
+                                        entryFile.setExecutable((entry.mode and 0o100) != 0)
                                     } catch (e: Exception) { }
                                 }
                             }
