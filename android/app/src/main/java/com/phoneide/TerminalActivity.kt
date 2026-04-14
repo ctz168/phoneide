@@ -198,7 +198,7 @@ class TerminalActivity : AppCompatActivity() {
         }
 
         appendOutput("$prompt$command\n")
-        inputField.text = ""
+        inputField.setText("")
 
         // Handle special commands
         when (command.lowercase()) {
