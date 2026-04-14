@@ -235,6 +235,11 @@ const EditorManager = (() => {
             if (!dirty) {
                 markDirty();
             }
+            // Live markdown preview update
+            if (mdPreviewMode && isMarkdownFile()) {
+                clearTimeout(window._mdPreviewTimer);
+                window._mdPreviewTimer = setTimeout(renderMarkdownPreview, 300);
+            }
         });
 
         // Track history for clean detection (CodeMirror clearHistory)
@@ -249,6 +254,12 @@ const EditorManager = (() => {
         window.addEventListener('resize', debounce(() => {
             resize();
         }, 150));
+
+        // Markdown preview toggle
+        const mdToggleBtn = document.getElementById('btn-md-toggle');
+        if (mdToggleBtn) {
+            mdToggleBtn.addEventListener('click', toggleMarkdownPreview);
+        }
 
         console.log('EditorManager initialized');
     }
@@ -358,6 +369,12 @@ const EditorManager = (() => {
         editor.scrollTo(scrollInfo.left, scrollInfo.top);
 
         updateCursorPos();
+        updateMarkdownButton();
+
+        // Re-render markdown preview if active
+        if (mdPreviewMode && isMarkdownFile()) {
+            renderMarkdownPreview();
+        }
     }
 
     /**
@@ -665,6 +682,75 @@ const EditorManager = (() => {
         return editor;
     }
 
+    // ── Markdown Preview ─────────────────────────────────────────
+    let mdPreviewMode = false;
+
+    /**
+     * Check if the current file is a markdown file
+     * @returns {boolean}
+     */
+    function isMarkdownFile() {
+        if (!currentFilePath) return false;
+        return currentFilePath.toLowerCase().endsWith('.md') || currentFilePath.toLowerCase().endsWith('.markdown');
+    }
+
+    /**
+     * Render markdown content into the preview div
+     */
+    function renderMarkdownPreview() {
+        const previewEl = document.getElementById('markdown-preview');
+        if (!previewEl || !editor) return;
+
+        const content = editor.getValue();
+        if (typeof marked !== 'undefined') {
+            previewEl.innerHTML = marked.parse(content, { breaks: true, gfm: true });
+        } else {
+            previewEl.innerHTML = '<p style="color:var(--text-muted)">Markdown 渲染器未加载</p>';
+        }
+    }
+
+    /**
+     * Toggle markdown preview mode
+     */
+    function toggleMarkdownPreview() {
+        if (!isMarkdownFile()) return;
+
+        mdPreviewMode = !mdPreviewMode;
+        const previewEl = document.getElementById('markdown-preview');
+        const cmWrapper = editor ? editor.getWrapperElement() : null;
+        const toggleBtn = document.getElementById('btn-md-toggle');
+
+        if (mdPreviewMode) {
+            renderMarkdownPreview();
+            if (cmWrapper) cmWrapper.style.display = 'none';
+            if (previewEl) previewEl.style.display = '';
+            if (toggleBtn) { toggleBtn.textContent = '📝'; toggleBtn.title = '切换编辑'; }
+        } else {
+            if (cmWrapper) cmWrapper.style.display = '';
+            if (previewEl) previewEl.style.display = 'none';
+            if (toggleBtn) { toggleBtn.textContent = '📖'; toggleBtn.title = '切换预览'; }
+            setTimeout(() => resize(), 50);
+        }
+    }
+
+    /**
+     * Update the markdown toggle button visibility based on current file
+     */
+    function updateMarkdownButton() {
+        const btn = document.getElementById('btn-md-toggle');
+        if (btn) {
+            btn.style.display = isMarkdownFile() ? '' : 'none';
+        }
+        // If switching away from markdown, reset preview mode
+        if (!isMarkdownFile() && mdPreviewMode) {
+            mdPreviewMode = false;
+            const previewEl = document.getElementById('markdown-preview');
+            const cmWrapper = editor ? editor.getWrapperElement() : null;
+            if (previewEl) previewEl.style.display = 'none';
+            if (cmWrapper) cmWrapper.style.display = '';
+        }
+    }
+
     // ── Auto-init when DOM is ready ────────────────────────────────
 
     if (document.readyState === 'loading') {
@@ -717,7 +803,12 @@ const EditorManager = (() => {
         // Configuration
         getConfig,
         setFontSize,
-        setTabSize
+        setTabSize,
+
+        // Markdown
+        isMarkdownFile,
+        toggleMarkdownPreview,
+        renderMarkdownPreview
     };
 })();
 

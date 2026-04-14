@@ -540,6 +540,34 @@ def stop_execution():
         return jsonify({'ok': stopped})
     return jsonify({'ok': False})
 
+@app.route('/api/run/processes', methods=['GET'])
+@handle_error
+def list_processes():
+    """List all running and recent processes"""
+    processes = []
+    for pid, info in running_processes.items():
+        start = info.get('start_time')
+        running = info.get('running', False)
+        uptime = ''
+        if start and running:
+            elapsed = time.time() - start
+            mins, secs = divmod(int(elapsed), 60)
+            hours, mins = divmod(mins, 60)
+            if hours > 0:
+                uptime = f'{hours}h {mins}m {secs}s'
+            elif mins > 0:
+                uptime = f'{mins}m {secs}s'
+            else:
+                uptime = f'{secs}s'
+        processes.append({
+            'id': pid,
+            'running': running,
+            'cwd': info.get('cwd', ''),
+            'uptime': uptime,
+            'start_time': start,
+        })
+    return jsonify({'processes': processes})
+
 @app.route('/api/run/output', methods=['GET'])
 @handle_error
 def get_output():
