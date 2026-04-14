@@ -37,4 +37,17 @@
     <string name="error_server_not_running">服务器未运行，正在尝试启动...</string>
     <string name="error_connection_failed">连接服务器失败</string>
     <string name="error_termux_not_found">未找到 Termux，请先安装</string>
+
+    <!-- Server Management -->
+    <string name="server_status_running">Server Running</string>
+    <string name="server_status_stopped">Server Stopped</string>
+    <string name="btn_restart">Restart</string>
+    <string name="btn_logs">Logs</string>
+    <string name="btn_update">Update</string>
+    <string name="updating">Updating…</string>
+    <string name="update_available">Update Available</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_current">Up to date</string>
+    <string name="server_logs">Server Logs</string>
+    <string name="server_restarting">Server is restarting…</string>
 </resources>

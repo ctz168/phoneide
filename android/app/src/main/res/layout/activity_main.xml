@@ -8,13 +8,15 @@
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:layout_above="@id/server_management_bar" />
 
     <!-- Loading overlay -->
     <LinearLayout
         android:id="@+id/loading_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_above="@id/server_management_bar"
         android:background="#0D1117"
         android:gravity="center"
         android:orientation="vertical"
@@ -41,6 +43,7 @@
         android:id="@+id/error_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_above="@id/server_management_bar"
         android:background="#0D1117"
         android:gravity="center"
         android:orientation="vertical"
@@ -70,6 +73,127 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:text="重试" />
+    </LinearLayout>
+
+    <!-- Server Management Bottom Bar -->
+    <LinearLayout
+        android:id="@+id/server_management_bar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_alignParentBottom="true"
+        android:background="#161B22"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <!-- Server Status Indicator -->
+        <LinearLayout
+            android:id="@+id/btn_server_status"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:padding="4dp">
+
+            <View
+                android:id="@+id/status_indicator"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@android:color/holo_red_dark" />
+
+            <TextView
+                android:id="@+id/status_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="@string/server_status_stopped"
+                android:textColor="#8B949E"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Restart Button -->
+        <LinearLayout
+            android:id="@+id/btn_restart"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/btn_restart"
+                android:src="@android:drawable/ic_menu_rotate" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_restart"
+                android:textColor="#C9D1D9"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Logs Button -->
+        <LinearLayout
+            android:id="@+id/btn_logs"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/btn_logs"
+                android:src="@android:drawable/ic_menu_agenda" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_logs"
+                android:textColor="#C9D1D9"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Update Button -->
+        <LinearLayout
+            android:id="@+id/btn_update"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/btn_update"
+                android:src="@android:drawable/ic_menu_save" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_update"
+                android:textColor="#C9D1D9"
+                android:textSize="9sp" />
+        </LinearLayout>
+
     </LinearLayout>
 
 </RelativeLayout>

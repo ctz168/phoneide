@@ -528,6 +528,397 @@ const AppManager = (() => {
         }
     }
 
+    // ── Server Management ──
+    let serverStatusTimer = null;
+    let logViewerEventSource = null;
+    let logViewerOpen = false;
+
+    function initServerManagement() {
+        // Wire up server management bar buttons
+        const restartBtn = document.getElementById('btn-server-restart');
+        const logsBtn = document.getElementById('btn-server-logs');
+        const updatesBtn = document.getElementById('btn-check-updates');
+
+        if (restartBtn) {
+            restartBtn.addEventListener('click', () => restartServer());
+        }
+        if (logsBtn) {
+            logsBtn.addEventListener('click', () => toggleLogViewer());
+        }
+        if (updatesBtn) {
+            updatesBtn.addEventListener('click', () => checkUpdates());
+        }
+
+        // Log viewer panel buttons
+        const logCloseBtn = document.getElementById('log-viewer-close');
+        const logClearBtn = document.getElementById('log-viewer-clear');
+        const logRefreshBtn = document.getElementById('log-viewer-refresh');
+
+        if (logCloseBtn) {
+            logCloseBtn.addEventListener('click', () => toggleLogViewer());
+        }
+        if (logClearBtn) {
+            logClearBtn.addEventListener('click', () => {
+                const content = document.getElementById('log-viewer-content');
+                if (content) content.textContent = '';
+            });
+        }
+        if (logRefreshBtn) {
+            logRefreshBtn.addEventListener('click', () => {
+                const content = document.getElementById('log-viewer-content');
+                if (content) content.textContent = '';
+                connectLogViewerSSE();
+            });
+        }
+
+        // Update dialog buttons
+        const updateCheckBtn = document.getElementById('update-check-btn');
+        const updateApplyBtn = document.getElementById('update-apply-btn');
+        const updateCloseBtn = document.getElementById('update-close-btn');
+
+        if (updateCheckBtn) {
+            updateCheckBtn.addEventListener('click', () => checkUpdates());
+        }
+        if (updateApplyBtn) {
+            updateApplyBtn.addEventListener('click', () => applyUpdate());
+        }
+        if (updateCloseBtn) {
+            updateCloseBtn.addEventListener('click', () => {
+                document.getElementById('update-dialog-overlay').classList.add('hidden');
+            });
+        }
+
+        // Close update dialog on overlay click
+        const updateOverlay = document.getElementById('update-dialog-overlay');
+        if (updateOverlay) {
+            updateOverlay.addEventListener('click', (e) => {
+                if (e.target === updateOverlay) {
+                    updateOverlay.classList.add('hidden');
+                }
+            });
+        }
+
+        // Start polling server status
+        pollServerStatus();
+        serverStatusTimer = setInterval(pollServerStatus, 10000);
+
+        // Close log viewer + update dialog on Escape
+        const origKeyHandler = document.onkeydown;
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (logViewerOpen) toggleLogViewer();
+                const updateDialog = document.getElementById('update-dialog-overlay');
+                if (updateDialog && !updateDialog.classList.contains('hidden')) {
+                    updateDialog.classList.add('hidden');
+                }
+            }
+        });
+    }
+
+    /**
+     * Poll /api/server/status and update the indicator
+     */
+    async function pollServerStatus() {
+        const dot = document.getElementById('server-status-dot');
+        const text = document.getElementById('server-status-text');
+        if (!dot || !text) return;
+
+        try {
+            const resp = await fetch('/api/server/status');
+            if (!resp.ok) throw new Error('Server unreachable');
+
+            const data = await resp.json();
+            const running = data.status === 'running' || data.running === true;
+
+            dot.className = 'status-dot ' + (running ? 'running' : 'stopped');
+            dot.title = running ? 'Server running' : 'Server stopped';
+            text.textContent = running
+                ? (data.uptime ? `Running (${formatUptime(data.uptime)})` : 'Running')
+                : 'Stopped';
+        } catch (err) {
+            dot.className = 'status-dot stopped';
+            dot.title = 'Server unreachable';
+            text.textContent = 'Unreachable';
+        }
+    }
+
+    /**
+     * Format uptime seconds into human-readable string
+     */
+    function formatUptime(seconds) {
+        if (!seconds || seconds < 0) return '';
+        if (seconds < 60) return Math.round(seconds) + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.round((seconds % 3600) / 60);
+        return h + 'h' + (m > 0 ? m + 'm' : '');
+    }
+
+    /**
+     * Restart the server via API, then poll until back online
+     */
+    async function restartServer() {
+        const dot = document.getElementById('server-status-dot');
+        const text = document.getElementById('server-status-text');
+
+        if (dot) {
+            dot.className = 'status-dot checking';
+            text.textContent = 'Restarting...';
+        }
+
+        showToast('Restarting server...', 'info', 2000);
+
+        try {
+            const resp = await fetch('/api/server/restart', { method: 'POST' });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => 'Unknown error');
+                throw new Error(errText);
+            }
+        } catch (err) {
+            showToast('Restart failed: ' + err.message, 'error', 3000);
+            if (dot) {
+                dot.className = 'status-dot stopped';
+                text.textContent = 'Error';
+            }
+            return;
+        }
+
+        // Poll health until back online
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds
+
+        const check = setInterval(async () => {
+            attempts++;
+            try {
+                const resp = await fetch('/api/server/status');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const running = data.status === 'running' || data.running === true;
+                    if (running) {
+                        clearInterval(check);
+                        if (dot) {
+                            dot.className = 'status-dot running';
+                            text.textContent = 'Running';
+                        }
+                        showToast('Server restarted successfully', 'success', 2000);
+                        pollServerStatus();
+                    }
+                }
+            } catch (_) {
+                // Still waiting
+            }
+
+            if (attempts >= maxAttempts) {
+                clearInterval(check);
+                if (dot) {
+                    dot.className = 'status-dot stopped';
+                    text.textContent = 'Timeout';
+                }
+                showToast('Server restart timed out', 'error', 3000);
+            }
+        }, 1000);
+    }
+
+    /**
+     * Toggle the log viewer panel
+     */
+    function toggleLogViewer() {
+        const panel = document.getElementById('log-viewer-panel');
+        if (!panel) return;
+
+        logViewerOpen = !logViewerOpen;
+
+        if (logViewerOpen) {
+            panel.classList.remove('hidden');
+            connectLogViewerSSE();
+        } else {
+            panel.classList.add('hidden');
+            disconnectLogViewerSSE();
+        }
+    }
+
+    /**
+     * Connect to the SSE log stream endpoint
+     */
+    function connectLogViewerSSE() {
+        disconnectLogViewerSSE();
+
+        const content = document.getElementById('log-viewer-content');
+        if (!content) return;
+
+        try {
+            logViewerEventSource = new EventSource('/api/server/logs/stream');
+
+            logViewerEventSource.addEventListener('message', (e) => {
+                const line = e.data || '';
+                if (!line.trim()) return;
+
+                // Auto-scroll if already at bottom
+                const atBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 60;
+
+                const lineEl = document.createElement('div');
+                lineEl.className = 'log-line';
+
+                // Colorize log levels
+                if (line.includes(' ERROR ') || line.includes('[ERROR]')) {
+                    lineEl.style.color = 'var(--red, #ff5555)';
+                } else if (line.includes(' WARNING ') || line.includes('[WARN]')) {
+                    lineEl.style.color = 'var(--yellow, #f1fa8c)';
+                } else if (line.includes(' INFO ') || line.includes('[INFO]')) {
+                    lineEl.style.color = 'var(--text-secondary, #aaa)';
+                } else if (line.includes(' DEBUG ') || line.includes('[DEBUG]')) {
+                    lineEl.style.color = 'var(--text-muted, #666)';
+                }
+
+                lineEl.textContent = line;
+                content.appendChild(lineEl);
+
+                // Keep max 2000 lines
+                while (content.children.length > 2000) {
+                    content.removeChild(content.firstChild);
+                }
+
+                if (atBottom) {
+                    content.scrollTop = content.scrollHeight;
+                }
+            });
+
+            logViewerEventSource.onerror = () => {
+                // EventSource auto-reconnects, but we can show status
+                console.warn('Log SSE connection error, will retry...');
+            };
+
+        } catch (err) {
+            console.warn('Failed to connect log SSE:', err.message);
+            // Fallback: no real-time logs
+            const lineEl = document.createElement('div');
+            lineEl.style.color = 'var(--text-muted, #666)';
+            lineEl.style.fontStyle = 'italic';
+            lineEl.textContent = 'Log streaming unavailable: ' + err.message;
+            content.appendChild(lineEl);
+        }
+    }
+
+    /**
+     * Disconnect the log viewer SSE connection
+     */
+    function disconnectLogViewerSSE() {
+        if (logViewerEventSource) {
+            logViewerEventSource.close();
+            logViewerEventSource = null;
+        }
+    }
+
+    /**
+     * Check for updates via API and show update dialog
+     */
+    async function checkUpdates() {
+        const overlay = document.getElementById('update-dialog-overlay');
+        const statusEl = document.getElementById('update-status');
+        const infoEl = document.getElementById('update-info');
+        const versionEl = document.getElementById('update-current-version');
+        const applyBtn = document.getElementById('update-apply-btn');
+        const checkBtn = document.getElementById('update-check-btn');
+
+        if (!overlay) return;
+
+        // Show dialog
+        overlay.classList.remove('hidden');
+        if (statusEl) statusEl.textContent = 'Checking for updates...';
+        if (infoEl) { infoEl.classList.add('hidden'); infoEl.textContent = ''; }
+        if (applyBtn) applyBtn.classList.add('hidden');
+        if (checkBtn) checkBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/update/check', { method: 'POST' });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => 'Unknown error');
+                throw new Error(errText);
+            }
+
+            const data = await resp.json();
+
+            // Show current version
+            if (versionEl) {
+                versionEl.textContent = 'Current version: ' + (data.current_version || data.version || 'unknown');
+            }
+
+            if (data.update_available) {
+                // Update available
+                if (statusEl) statusEl.textContent = 'Update available!';
+
+                let info = '';
+                if (data.new_version) info += 'New version: ' + data.new_version + '\n';
+                if (data.commit) info += 'Commit: ' + data.commit + '\n';
+                if (data.commit_message) info += 'Message: ' + data.commit_message + '\n';
+                if (data.commit_date) info += 'Date: ' + data.commit_date + '\n';
+                if (data.changelog) info += '\n' + data.changelog + '\n';
+
+                if (infoEl && info) {
+                    infoEl.textContent = info;
+                    infoEl.classList.remove('hidden');
+                }
+                if (applyBtn) applyBtn.classList.remove('hidden');
+            } else {
+                if (statusEl) statusEl.textContent = 'You are up to date!';
+                if (versionEl) {
+                    versionEl.textContent = 'Current version: ' + (data.current_version || data.version || 'latest');
+                }
+            }
+        } catch (err) {
+            if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+            if (versionEl) versionEl.textContent = 'Version check failed';
+        } finally {
+            if (checkBtn) checkBtn.disabled = false;
+        }
+    }
+
+    /**
+     * Apply the pending update via API
+     */
+    async function applyUpdate() {
+        const statusEl = document.getElementById('update-status');
+        const applyBtn = document.getElementById('update-apply-btn');
+        const checkBtn = document.getElementById('update-check-btn');
+
+        if (!statusEl) return;
+
+        if (applyBtn) applyBtn.disabled = true;
+        if (checkBtn) checkBtn.disabled = true;
+
+        statusEl.innerHTML = 'Updating...\n<div class="update-progress-bar"><div class="update-progress-fill" id="update-progress"></div></div>';
+
+        const progressEl = document.getElementById('update-progress');
+
+        try {
+            const resp = await fetch('/api/update/apply', { method: 'POST' });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => 'Unknown error');
+                throw new Error(errText);
+            }
+
+            const data = await resp.json();
+
+            if (progressEl) progressEl.style.width = '100%';
+            statusEl.innerHTML = '✅ Update applied! The page will reload in a few seconds...';
+
+            showToast('Update applied, reloading...', 'success', 3000);
+
+            // Reload page after delay
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+
+        } catch (err) {
+            statusEl.textContent = 'Update failed: ' + err.message;
+            if (progressEl) progressEl.style.width = '0%';
+            showToast('Update failed: ' + err.message, 'error', 3000);
+        } finally {
+            if (applyBtn) applyBtn.disabled = false;
+            if (checkBtn) checkBtn.disabled = false;
+        }
+    }
+
     // ── Prevent unwanted behaviors ──
     function initMobileFixes() {
         // Prevent pull-to-refresh
@@ -577,6 +968,7 @@ const AppManager = (() => {
         initResize();
         initMobileFixes();
         initTheme();
+        initServerManagement();
         await loadTheme();
 
         // Init modules (order matters)
@@ -627,7 +1019,10 @@ const AppManager = (() => {
         init();
     }
 
-    return { init, showToast, showDialog, showPromptDialog, showConfirmDialog, showInputDialog };
+    return {
+        init, showToast, showDialog, showPromptDialog, showConfirmDialog, showInputDialog,
+        restartServer, toggleLogViewer, checkUpdates, applyUpdate, pollServerStatus
+    };
 })();
 
 window.AppManager = AppManager;

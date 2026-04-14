@@ -1,5 +1,5 @@
 /**
- * ChatManager - LLM chat interface and agent tool execution for PhoneIDE
+ * ChatManager - LLM chat interface with SSE streaming and agent tool execution for PhoneIDE
  * Works with Flask backend on port 1239
  */
 const ChatManager = (() => {
@@ -10,6 +10,13 @@ const ChatManager = (() => {
     let messages = [];                // local cache of chat history
     let lastUserMessage = null;       // for re-send
     let settingsDialogEl = null;      // cached settings dialog
+    let currentAbortController = null; // for aborting SSE streams
+    let currentStreamEl = null;       // current streaming message element
+    let streamBuffer = '';            // buffer for accumulating streamed text
+    let autoScrollEnabled = true;     // auto-scroll state
+    let turnIndicator = null;         // turn X/Y element reference
+    let iterationCount = 0;           // agent iteration counter
+    let streamingStartTime = null;    // for execution time tracking
 
     // ── Constants ──────────────────────────────────────────────────
     const KNOWN_TOOLS = [
@@ -29,28 +36,21 @@ const ChatManager = (() => {
         install_package: '📦'
     };
 
+    const COLLAPSE_THRESHOLD = 500; // chars before showing "Show more"
+
     // ── Helpers ────────────────────────────────────────────────────
 
-    /**
-     * Escape HTML entities for safe insertion
-     */
     function escapeHTML(str) {
         const div = document.createElement('div');
         div.textContent = str || '';
         return div.innerHTML;
     }
 
-    /**
-     * Escape string for use in HTML attribute values
-     */
     function escapeAttr(str) {
         return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
                           .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    /**
-     * Format a Date or timestamp string into a short time display
-     */
     function formatTime(time) {
         let d;
         if (time instanceof Date) {
@@ -66,44 +66,48 @@ const ChatManager = (() => {
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
-    /**
-     * Truncate a string to a maximum length with ellipsis
-     */
     function truncate(str, maxLen) {
         if (!str) return '';
         if (str.length <= maxLen) return str;
         return str.substring(0, maxLen) + '...';
     }
 
-    /**
-     * Generate a unique ID for message elements
-     */
     function msgId() {
         return 'chat-msg-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    /**
+     * Estimate token count from text (rough heuristic: ~4 chars per token)
+     */
+    function estimateTokens(text) {
+        if (!text) return 0;
+        return Math.ceil(text.length / 4);
     }
 
     // ── Markdown-Lite Rendering ────────────────────────────────────
 
     /**
-     * Render markdown-lite formatting:
+     * Render markdown-lite formatting with extended support for:
      *  - Code blocks: ```lang\n...\n```
      *  - Inline code: `...`
      *  - Bold: **...** or __...__
      *  - Italic: *...* or _..._
+     *  - Links: [text](url) → clickable anchor tags
+     *  - Headings: # heading, ## heading, ### heading
+     *  - Horizontal rules: --- or ***
+     *  - Blockquotes: > text
      *  - Unordered lists: - item or * item
      *  - Ordered lists: 1. item
      *  - Line breaks: double newline
      *
-     * Returns HTML string. IMPORTANT: input must already be HTML-escaped.
+     * Returns HTML string. Input is raw text (will be HTML-escaped internally).
      */
     function renderMarkdownLite(text) {
         if (!text) return '';
 
-        // HTML-escape the raw text first
         let html = escapeHTML(text);
 
         // Extract and protect fenced code blocks first
-        // Replace ```lang\ncode\n``` with placeholder markers
         const codeBlocks = [];
         html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
             const idx = codeBlocks.length;
@@ -111,7 +115,7 @@ const ChatManager = (() => {
             return `\x00CODEBLOCK_${idx}\x00`;
         });
 
-        // Also handle ```...``` without explicit newlines (inline code blocks)
+        // Handle ```...``` without explicit newlines (inline code blocks)
         html = html.replace(/```([\s\S]*?)```/g, (_, code) => {
             const idx = codeBlocks.length;
             codeBlocks.push({ lang: '', code: code.replace(/^\n/, '').replace(/\n$/, '') });
@@ -125,6 +129,22 @@ const ChatManager = (() => {
             inlineCodes.push(code);
             return `\x00INLINE_${idx}\x00`;
         });
+
+        // Links: [text](url) — must be done before bold/italic
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+        // Headings: ### heading, ## heading, # heading (at start of line)
+        html = html.replace(/^### (.+)$/gm, '<strong class="md-h3">$1</strong>');
+        html = html.replace(/^## (.+)$/gm, '<strong class="md-h2">$1</strong>');
+        html = html.replace(/^# (.+)$/gm, '<strong class="md-h1">$1</strong>');
+
+        // Horizontal rules: --- or *** (on their own line)
+        html = html.replace(/^[-*]{3,}$/gm, '<hr>');
+
+        // Blockquotes: > text
+        html = html.replace(/^&gt;\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+        // Merge consecutive blockquotes
+        html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
 
         // Bold: **...** or __...__
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -171,9 +191,6 @@ const ChatManager = (() => {
 
     // ── Code Copy Handler ──────────────────────────────────────────
 
-    /**
-     * Bind click-to-copy on all .code-copy-btn elements within a container
-     */
     function bindCopyButtons(container) {
         const btns = (container || document).querySelectorAll('.code-copy-btn');
         btns.forEach(btn => {
@@ -187,7 +204,6 @@ const ChatManager = (() => {
                     btn.textContent = '✅';
                     setTimeout(() => { btn.textContent = original; }, 1500);
                 }).catch(() => {
-                    // Fallback for older browsers / non-HTTPS
                     const ta = document.createElement('textarea');
                     ta.value = code;
                     ta.style.position = 'fixed';
@@ -204,15 +220,38 @@ const ChatManager = (() => {
         });
     }
 
+    // ── Auto-Scroll with User Detection ────────────────────────────
+
+    function initAutoScroll() {
+        const container = document.getElementById('chat-messages');
+        if (!container || container._autoScrollInit) return;
+        container._autoScrollInit = true;
+
+        container.addEventListener('scroll', () => {
+            const threshold = 80;
+            const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+            autoScrollEnabled = atBottom;
+        });
+    }
+
+    function scrollToBottom() {
+        if (!autoScrollEnabled) return;
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    function forceScrollToBottom() {
+        autoScrollEnabled = true;
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
     // ── Message Rendering ──────────────────────────────────────────
 
-    /**
-     * Render a single message element and return it
-     * @param {string} role - 'user', 'assistant', 'tool', 'error', 'system'
-     * @param {string} content - message text
-     * @param {object} [extra] - additional data (time, tool_calls, tool_result, args, etc.)
-     * @returns {HTMLElement} the created message element
-     */
     function createMessageEl(role, content, extra) {
         extra = extra || {};
 
@@ -220,18 +259,13 @@ const ChatManager = (() => {
         div.className = 'chat-msg';
         div.id = extra.id || msgId();
 
-        // Role-based class
-        if (role === 'user') {
-            div.classList.add('user');
-        } else if (role === 'assistant') {
-            div.classList.add('assistant');
-        } else if (role === 'tool') {
-            div.classList.add('tool');
-        } else if (role === 'error') {
-            div.classList.add('error');
-        }
+        if (role === 'user') div.classList.add('user');
+        else if (role === 'assistant') div.classList.add('assistant');
+        else if (role === 'tool') div.classList.add('tool');
+        else if (role === 'error') div.classList.add('error');
+        else if (role === 'system') div.classList.add('system');
 
-        // Role badge for non-user messages
+        // Role badge for assistant
         if (role === 'assistant') {
             const badge = document.createElement('div');
             badge.className = 'chat-role-badge';
@@ -252,17 +286,60 @@ const ChatManager = (() => {
                 + (ok ? '<span class="tool-status tool-ok">✓</span>' : '<span class="tool-status tool-fail">✗</span>');
             div.appendChild(header);
 
+            if (extra.duration) {
+                const durEl = document.createElement('span');
+                durEl.className = 'tool-duration';
+                durEl.textContent = formatDuration(extra.duration);
+                header.appendChild(durEl);
+            }
+
             if (argsStr) {
                 const argsEl = document.createElement('div');
                 argsEl.className = 'tool-args';
                 argsEl.textContent = argsStr;
+                if (argsStr.length > 120) {
+                    argsEl.classList.add('collapsible', 'collapsed');
+                    argsEl.addEventListener('click', () => {
+                        argsEl.classList.toggle('collapsed');
+                        argsEl.classList.toggle('expanded');
+                    });
+                }
                 div.appendChild(argsEl);
             }
 
             if (content) {
                 const resultEl = document.createElement('div');
                 resultEl.className = 'tool-result';
-                resultEl.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+                const resultStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+
+                if (resultStr.length > COLLAPSE_THRESHOLD) {
+                    const shortContent = resultStr.substring(0, COLLAPSE_THRESHOLD);
+                    const fullContent = resultStr;
+
+                    const shortSpan = document.createElement('div');
+                    shortSpan.className = 'tool-result-short';
+                    shortSpan.textContent = shortContent + '...';
+
+                    const fullSpan = document.createElement('div');
+                    fullSpan.className = 'tool-result-full';
+                    fullSpan.style.display = 'none';
+                    fullSpan.textContent = fullContent;
+
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.className = 'tool-toggle-btn';
+                    toggleBtn.textContent = 'Show more';
+                    toggleBtn.addEventListener('click', () => {
+                        const expanded = fullSpan.style.display !== 'none';
+                        fullSpan.style.display = expanded ? 'none' : '';
+                        toggleBtn.textContent = expanded ? 'Show more' : 'Show less';
+                    });
+
+                    resultEl.appendChild(shortSpan);
+                    resultEl.appendChild(fullSpan);
+                    resultEl.appendChild(toggleBtn);
+                } else {
+                    resultEl.textContent = resultStr;
+                }
                 div.appendChild(resultEl);
             }
 
@@ -283,6 +360,25 @@ const ChatManager = (() => {
             icon.textContent = '⚠️ ';
             div.appendChild(icon);
             const textEl = document.createElement('span');
+            textEl.innerHTML = renderMarkdownLite(content);
+            div.appendChild(textEl);
+
+            // Retry button
+            if (extra.retryable) {
+                const retryBtn = document.createElement('button');
+                retryBtn.className = 'chat-retry-btn';
+                retryBtn.textContent = '🔄 Retry';
+                retryBtn.addEventListener('click', () => {
+                    if (lastUserMessage) {
+                        sendMessage(lastUserMessage);
+                    }
+                });
+                div.appendChild(retryBtn);
+            }
+        } else if (role === 'system') {
+            // System / status messages (thinking, done, etc.)
+            const textEl = document.createElement('div');
+            textEl.className = 'chat-system-msg';
             textEl.innerHTML = renderMarkdownLite(content);
             div.appendChild(textEl);
         } else {
@@ -306,9 +402,6 @@ const ChatManager = (() => {
         return div;
     }
 
-    /**
-     * Format tool args for display (truncate long values)
-     */
     function formatToolArgs(args) {
         if (!args) return '';
         if (typeof args === 'string') {
@@ -323,10 +416,12 @@ const ChatManager = (() => {
         return parts.join(', ');
     }
 
-    /**
-     * Render all messages into the chat container
-     * @param {Array} msgs - array of message objects {role, content, time, ...}
-     */
+    function formatDuration(ms) {
+        if (!ms) return '';
+        if (ms < 1000) return ms + 'ms';
+        return (ms / 1000).toFixed(1) + 's';
+    }
+
     function renderMessages(msgs) {
         const container = document.getElementById('chat-messages');
         if (!container) return;
@@ -345,20 +440,13 @@ const ChatManager = (() => {
         }
 
         bindCopyButtons(container);
-        scrollToBottom();
+        forceScrollToBottom();
     }
 
-    /**
-     * Add a single message to the chat display (append)
-     * @param {string} role - 'user', 'assistant', 'tool', 'error'
-     * @param {string} content - message content
-     * @param {object} [extra] - extra data
-     */
     function addMessage(role, content, extra) {
         const container = document.getElementById('chat-messages');
         if (!container) return;
 
-        // Remove empty state if present
         const emptyState = container.querySelector('.empty-state');
         if (emptyState) emptyState.remove();
 
@@ -368,39 +456,29 @@ const ChatManager = (() => {
         const el = createMessageEl(role, content, extra);
         container.appendChild(el);
 
-        // Update local cache
         messages.push({ role, content, time: extra.time, ...extra });
 
         bindCopyButtons(container);
-        scrollToBottom();
+        forceScrollToBottom();
 
         return el;
     }
 
-    // ── Typing Indicator ───────────────────────────────────────────
+    // ── Typing / Status Indicators ─────────────────────────────────
 
-    /**
-     * Show typing indicator
-     * @returns {HTMLElement} the indicator element
-     */
     function showTyping() {
         const container = document.getElementById('chat-messages');
         if (!container) return null;
-
-        // Don't add duplicate
         if (container.querySelector('.chat-typing')) return null;
 
         const indicator = document.createElement('div');
         indicator.className = 'chat-typing';
         indicator.textContent = 'Thinking';
         container.appendChild(indicator);
-        scrollToBottom();
+        forceScrollToBottom();
         return indicator;
     }
 
-    /**
-     * Hide typing indicator
-     */
     function hideTyping() {
         const container = document.getElementById('chat-messages');
         if (!container) return;
@@ -408,24 +486,267 @@ const ChatManager = (() => {
         if (indicator) indicator.remove();
     }
 
-    // ── Auto-Scroll ────────────────────────────────────────────────
+    /**
+     * Create or update the turn indicator (Turn X/Y)
+     */
+    function updateTurnIndicator(current, total) {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+
+        if (!turnIndicator) {
+            turnIndicator = document.createElement('div');
+            turnIndicator.className = 'chat-turn-indicator';
+            turnIndicator.id = 'chat-turn-indicator';
+        }
+
+        turnIndicator.textContent = total > 0
+            ? `Turn ${current}/${total}`
+            : `Turn ${current}`;
+        turnIndicator.style.display = '';
+
+        // Insert at the top of the messages container (after empty state if any)
+        const existing = container.querySelector('#chat-turn-indicator');
+        if (!existing) {
+            const first = container.firstChild;
+            container.insertBefore(turnIndicator, first);
+        }
+    }
+
+    function hideTurnIndicator() {
+        if (turnIndicator) {
+            turnIndicator.style.display = 'none';
+        }
+    }
+
+    // ── Tool Progress Visualization ────────────────────────────────
 
     /**
-     * Scroll chat messages container to bottom
+     * Show a tool execution in progress with spinning indicator
+     * @returns {HTMLElement} the tool element for later updating
      */
-    function scrollToBottom() {
+    function showToolProgress(toolName, args) {
         const container = document.getElementById('chat-messages');
-        if (container) {
-            container.scrollTop = container.scrollHeight;
+        if (!container) return null;
+
+        const el = document.createElement('div');
+        el.className = 'chat-msg tool tool-progress';
+        el.id = msgId();
+
+        const icon = TOOL_ICONS[toolName] || '🔧';
+        const argsStr = args ? formatToolArgs(args) : '';
+
+        el.innerHTML = `
+            <div class="tool-header">
+                <span class="tool-name">${icon} ${escapeHTML(toolName)}</span>
+                <span class="tool-spinner" role="status" aria-label="Running">⏳</span>
+            </div>
+            ${argsStr ? `<div class="tool-args">${escapeHTML(argsStr)}</div>` : ''}
+            <div class="tool-result tool-waiting">Executing...</div>
+        `;
+
+        el._toolStartTime = Date.now();
+        container.appendChild(el);
+        forceScrollToBottom();
+        return el;
+    }
+
+    /**
+     * Update a tool progress element with the result
+     */
+    function finalizeToolResult(toolEl, result, ok) {
+        if (!toolEl) return;
+
+        const duration = Date.now() - (toolEl._toolStartTime || Date.now());
+
+        // Update spinner to status
+        const spinner = toolEl.querySelector('.tool-spinner');
+        if (spinner) {
+            spinner.className = ok ? 'tool-status tool-ok' : 'tool-status tool-fail';
+            spinner.textContent = ok ? '✓' : '✗';
+            spinner.setAttribute('role', '');
+            spinner.removeAttribute('aria-label');
+        }
+
+        // Update result
+        const resultEl = toolEl.querySelector('.tool-result');
+        if (resultEl) {
+            resultEl.className = 'tool-result';
+            resultEl.classList.remove('tool-waiting');
+            const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+
+            if (resultStr.length > COLLAPSE_THRESHOLD) {
+                resultEl.innerHTML = '';
+                const shortSpan = document.createElement('div');
+                shortSpan.className = 'tool-result-short';
+                shortSpan.textContent = resultStr.substring(0, COLLAPSE_THRESHOLD) + '...';
+
+                const fullSpan = document.createElement('div');
+                fullSpan.className = 'tool-result-full';
+                fullSpan.style.display = 'none';
+                fullSpan.textContent = resultStr;
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'tool-toggle-btn';
+                toggleBtn.textContent = 'Show more';
+                toggleBtn.addEventListener('click', () => {
+                    const expanded = fullSpan.style.display !== 'none';
+                    fullSpan.style.display = expanded ? 'none' : '';
+                    toggleBtn.textContent = expanded ? 'Show more' : 'Show less';
+                });
+
+                resultEl.appendChild(shortSpan);
+                resultEl.appendChild(fullSpan);
+                resultEl.appendChild(toggleBtn);
+            } else {
+                resultEl.textContent = resultStr;
+            }
+        }
+
+        // Add duration to header
+        const header = toolEl.querySelector('.tool-header');
+        if (header && duration) {
+            const durEl = document.createElement('span');
+            durEl.className = 'tool-duration';
+            durEl.textContent = formatDuration(duration);
+            header.appendChild(durEl);
+        }
+
+        // Add timestamp
+        const timeEl = document.createElement('div');
+        timeEl.className = 'chat-time';
+        timeEl.textContent = formatTime(new Date());
+        toolEl.appendChild(timeEl);
+
+        toolEl.classList.remove('tool-progress');
+        bindCopyButtons(toolEl);
+    }
+
+    // ── Streaming Message Display ──────────────────────────────────
+
+    /**
+     * Create a new streaming message element and start accumulating text
+     * @returns {HTMLElement} the message element
+     */
+    function startStreamingMessage() {
+        const container = document.getElementById('chat-messages');
+        if (!container) return null;
+
+        const el = document.createElement('div');
+        el.className = 'chat-msg assistant streaming';
+        el.id = msgId();
+
+        const badge = document.createElement('div');
+        badge.className = 'chat-role-badge';
+        badge.textContent = '🤖 Assistant';
+        el.appendChild(badge);
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'chat-content chat-streaming';
+        el.appendChild(contentEl);
+
+        container.appendChild(el);
+        currentStreamEl = el;
+        streamBuffer = '';
+
+        forceScrollToBottom();
+        return el;
+    }
+
+    /**
+     * Append a chunk of text to the current streaming message
+     */
+    function appendStreamChunk(chunk) {
+        if (!currentStreamEl || !chunk) return;
+
+        streamBuffer += chunk;
+
+        const contentEl = currentStreamEl.querySelector('.chat-content');
+        if (contentEl) {
+            contentEl.innerHTML = renderMarkdownLite(streamBuffer);
+            bindCopyButtons(contentEl);
+            scrollToBottom();
+        }
+    }
+
+    /**
+     * Finalize the current streaming message
+     */
+    function finalizeStreamMessage() {
+        if (!currentStreamEl) return;
+
+        const contentEl = currentStreamEl.querySelector('.chat-content');
+        if (contentEl) {
+            // Final render of accumulated text
+            contentEl.innerHTML = renderMarkdownLite(streamBuffer);
+            contentEl.classList.remove('chat-streaming');
+            bindCopyButtons(contentEl);
+        }
+
+        currentStreamEl.classList.remove('streaming');
+
+        // Add timestamp
+        const timeEl = document.createElement('div');
+        timeEl.className = 'chat-time';
+        timeEl.textContent = formatTime(new Date());
+        currentStreamEl.appendChild(timeEl);
+
+        // Cache the message
+        messages.push({
+            role: 'assistant',
+            content: streamBuffer,
+            time: new Date()
+        });
+
+        const el = currentStreamEl;
+        currentStreamEl = null;
+        streamBuffer = '';
+
+        forceScrollToBottom();
+        return el;
+    }
+
+    // ── Stop Button ────────────────────────────────────────────────
+
+    /**
+     * Create and show the stop button during generation
+     * @returns {HTMLElement} the stop button
+     */
+    function showStopButton() {
+        hideStopButton();
+
+        const inputArea = document.getElementById('chat-input-area');
+        if (!inputArea) return null;
+
+        const btn = document.createElement('button');
+        btn.id = 'chat-stop';
+        btn.className = 'chat-stop-btn';
+        btn.textContent = '⏹ Stop';
+        btn.addEventListener('click', abortGeneration);
+
+        inputArea.insertBefore(btn, inputArea.firstChild);
+        return btn;
+    }
+
+    /**
+     * Hide the stop button
+     */
+    function hideStopButton() {
+        const btn = document.getElementById('chat-stop');
+        if (btn) btn.remove();
+    }
+
+    /**
+     * Abort the current SSE stream
+     */
+    function abortGeneration() {
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
         }
     }
 
     // ── Send / Processing State ─────────────────────────────────────
 
-    /**
-     * Set the processing state and update UI
-     * @param {boolean} processing - true while waiting for response
-     */
     function setProcessing(processing) {
         isProcessing = processing;
 
@@ -436,6 +757,7 @@ const ChatManager = (() => {
         if (sendBtn) {
             sendBtn.disabled = processing;
             sendBtn.textContent = processing ? 'Thinking...' : 'Send';
+            sendBtn.style.display = processing ? 'none' : '';
         }
 
         if (input) {
@@ -446,17 +768,14 @@ const ChatManager = (() => {
         }
 
         if (processing) {
-            showTyping();
+            showStopButton();
             if (statusEl) statusEl.textContent = '';
         } else {
+            hideStopButton();
             hideTyping();
         }
     }
 
-    /**
-     * Update the execute status bar with tool execution info
-     * @param {string} text - status text to show
-     */
     function setExecuteStatus(text) {
         const el = document.getElementById('chat-execute-status');
         if (el) {
@@ -466,10 +785,6 @@ const ChatManager = (() => {
 
     // ── API: Load History ──────────────────────────────────────────
 
-    /**
-     * Load chat history from the server and render it
-     * @returns {Promise<Array>} messages array
-     */
     async function loadHistory() {
         try {
             const resp = await fetch('/api/chat/history');
@@ -481,16 +796,15 @@ const ChatManager = (() => {
             return msgs;
         } catch (err) {
             console.warn('ChatManager: loadHistory error:', err.message);
-            // Show empty state
             renderMessages([]);
             return [];
         }
     }
 
-    // ── API: Send Message ──────────────────────────────────────────
+    // ── API: Send Message (SSE Streaming) ──────────────────────────
 
     /**
-     * Send a message to the chat API
+     * Send a message to the chat API using SSE streaming
      * @param {string} [text] - message text (defaults to input field value)
      */
     async function sendMessage(text) {
@@ -506,17 +820,29 @@ const ChatManager = (() => {
 
         // Clear input
         if (input) input.value = '';
+        autoResizeInput();
         lastUserMessage = message;
 
         // Add user message to display
         addMessage('user', message);
         setProcessing(true);
+        hideTurnIndicator();
+
+        streamingStartTime = Date.now();
+        iterationCount = 0;
+        let currentToolEl = null;
+        let hasError = false;
+
+        // Create abort controller
+        currentAbortController = new AbortController();
+        const signal = currentAbortController.signal;
 
         try {
-            const resp = await fetch('/api/chat/send', {
+            const resp = await fetch('/api/chat/send/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message }),
+                signal
             });
 
             if (!resp.ok) {
@@ -524,54 +850,176 @@ const ChatManager = (() => {
                 throw new Error(errBody || `Server error: ${resp.status} ${resp.statusText}`);
             }
 
-            const data = await resp.json();
+            // Read the SSE stream
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            // Update local messages cache from server history
-            if (data.history) {
-                messages = data.history;
-            }
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-            // Display assistant response
-            if (data.response) {
-                hideTyping();
-                addMessage('assistant', data.response.content || '', {
-                    time: data.response.time,
-                    tool_calls: data.response.tool_calls
-                });
-            }
+                buffer += decoder.decode(value, { stream: true });
 
-            // Display tool execution results
-            if (data.tool_results && data.tool_results.length > 0) {
-                for (const tr of data.tool_results) {
-                    setExecuteStatus(`Ran ${tr.tool || 'tool'}...`);
-                    addMessage('tool', tr.result, {
-                        tool: tr.tool,
-                        args: tr.args,
-                        ok: tr.ok !== false,
-                        time: tr.time || new Date()
-                    });
+                // Parse SSE events from buffer
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // keep incomplete line in buffer
+
+                let currentEvent = null;
+                let currentData = '';
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.substring(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        currentData = line.substring(6);
+
+                        // Process event
+                        if (currentEvent === 'text') {
+                            // Text chunk from assistant
+                            hideTyping();
+                            if (!currentStreamEl) {
+                                startStreamingMessage();
+                            }
+                            // Parse JSON data
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                appendStreamChunk(parsed.content || parsed.text || currentData);
+                            } catch (_) {
+                                appendStreamChunk(currentData);
+                            }
+                        } else if (currentEvent === 'tool_start') {
+                            // Tool execution starting
+                            hideTyping();
+                            // Finalize any in-progress stream
+                            if (currentStreamEl && streamBuffer) {
+                                finalizeStreamMessage();
+                            }
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                currentToolEl = showToolProgress(
+                                    parsed.tool || parsed.name || 'unknown',
+                                    parsed.args
+                                );
+                                setExecuteStatus(`Running ${parsed.tool || parsed.name || 'tool'}...`);
+                            } catch (_) {
+                                currentToolEl = showToolProgress('tool', {});
+                            }
+                        } else if (currentEvent === 'tool_result') {
+                            // Tool execution completed
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                const ok = parsed.ok !== false && parsed.error === undefined;
+                                finalizeToolResult(
+                                    currentToolEl,
+                                    parsed.result || parsed.output || parsed.error || '',
+                                    ok
+                                );
+                                iterationCount++;
+                                updateTurnIndicator(iterationCount, parsed.max_iterations || 0);
+                                setExecuteStatus(`Turn ${iterationCount}${parsed.max_iterations ? '/' + parsed.max_iterations : ''}`);
+                            } catch (_) {
+                                finalizeToolResult(currentToolEl, currentData, true);
+                            }
+                            currentToolEl = null;
+                            forceScrollToBottom();
+                        } else if (currentEvent === 'thinking') {
+                            // Status / thinking message
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                setExecuteStatus(parsed.message || parsed.text || 'Thinking...');
+                                hideTyping();
+                                showTyping();
+                            } catch (_) {
+                                setExecuteStatus('Thinking...');
+                            }
+                        } else if (currentEvent === 'error') {
+                            // Error occurred
+                            hasError = true;
+                            hideTyping();
+                            if (currentStreamEl && streamBuffer) {
+                                finalizeStreamMessage();
+                            }
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                addMessage('error', parsed.message || parsed.error || currentData, {
+                                    retryable: true
+                                });
+                                showToast('Chat error: ' + (parsed.message || parsed.error || 'Unknown error'), 'error');
+                            } catch (_) {
+                                addMessage('error', currentData, { retryable: true });
+                                showToast('Chat error: ' + currentData, 'error');
+                            }
+                        } else if (currentEvent === 'done') {
+                            // Generation complete
+                            hideTyping();
+                            if (currentStreamEl && streamBuffer) {
+                                finalizeStreamMessage();
+                            }
+                            try {
+                                const parsed = JSON.parse(currentData);
+                                const totalDuration = Date.now() - streamingStartTime;
+                                const tokensUsed = estimateTokens(streamBuffer);
+                                let summary = `Completed in ${formatDuration(totalDuration)}`;
+                                if (parsed.iterations) {
+                                    summary += ` · ${parsed.iterations} iteration(s)`;
+                                }
+                                summary += ` · ~${tokensUsed} tokens`;
+                                setExecuteStatus(summary);
+                            } catch (_) {}
+                        }
+
+                        currentEvent = null;
+                        currentData = '';
+                    } else if (line === '' || line.startsWith(':')) {
+                        // Empty line (event separator) or comment — skip
+                        currentEvent = null;
+                        currentData = '';
+                    }
                 }
-                setExecuteStatus(`Executed ${data.tool_results.length} tool(s)`);
             }
-
-            // Auto-resize input
-            autoResizeInput();
 
         } catch (err) {
-            hideTyping();
-            addMessage('error', err.message);
-            showToast('Chat error: ' + err.message, 'error');
+            if (err.name === 'AbortError') {
+                // User aborted
+                hideTyping();
+                if (currentStreamEl && streamBuffer) {
+                    finalizeStreamMessage();
+                }
+                addMessage('system', 'Generation stopped by user.');
+                showToast('Generation stopped', 'info');
+            } else {
+                hideTyping();
+                if (currentStreamEl && streamBuffer) {
+                    finalizeStreamMessage();
+                }
+                addMessage('error', err.message, { retryable: true });
+                showToast('Chat error: ' + err.message, 'error');
+                hasError = true;
+            }
         } finally {
-            setProcessing(false);
-            setExecuteStatus('');
+            currentAbortController = null;
+            isProcessing = false;
+            hideStopButton();
+            hideTyping();
+            hideTurnIndicator();
+            autoResizeInput();
+
+            const sendBtn = document.getElementById('chat-send');
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                sendBtn.style.display = '';
+            }
+            const inputEl = document.getElementById('chat-input');
+            if (inputEl) {
+                inputEl.disabled = false;
+            }
         }
     }
 
     // ── API: Clear History ─────────────────────────────────────────
 
-    /**
-     * Clear chat history on server and in UI
-     */
     async function clearHistory() {
         try {
             const resp = await fetch('/api/chat/clear', { method: 'POST' });
@@ -589,9 +1037,6 @@ const ChatManager = (() => {
 
     // ── Re-Send Last Message ───────────────────────────────────────
 
-    /**
-     * Re-send the last user message
-     */
     async function resendLastMessage() {
         if (isProcessing) return;
         if (!lastUserMessage) {
@@ -603,10 +1048,6 @@ const ChatManager = (() => {
 
     // ── LLM Settings ───────────────────────────────────────────────
 
-    /**
-     * Load current LLM config from the server
-     * @returns {Promise<object>} config object
-     */
     async function loadLLMConfig() {
         try {
             const resp = await fetch('/api/llm/config');
@@ -618,11 +1059,6 @@ const ChatManager = (() => {
         }
     }
 
-    /**
-     * Save LLM config to the server
-     * @param {object} config - config fields to save
-     * @returns {Promise<object>} saved config
-     */
     async function saveLLMConfig(config) {
         try {
             const resp = await fetch('/api/llm/config', {
@@ -638,14 +1074,9 @@ const ChatManager = (() => {
         }
     }
 
-    /**
-     * Show the LLM settings dialog
-     */
     async function showSettingsDialog() {
-        // Remove existing dialog if open
         removeSettingsDialog();
 
-        // Load current config
         const config = await loadLLMConfig() || {};
 
         const overlay = document.createElement('div');
@@ -704,10 +1135,8 @@ const ChatManager = (() => {
         document.body.appendChild(overlay);
         settingsDialogEl = overlay;
 
-        // Inject inline styles for the settings dialog
         injectSettingsStyles();
 
-        // Bind events
         overlay.querySelector('.chat-settings-close').addEventListener('click', removeSettingsDialog);
         overlay.querySelector('#llm-settings-cancel').addEventListener('click', removeSettingsDialog);
         overlay.querySelector('#llm-settings-save').addEventListener('click', async () => {
@@ -728,19 +1157,14 @@ const ChatManager = (() => {
             }
         });
 
-        // Close on overlay click (outside dialog)
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) removeSettingsDialog();
         });
 
-        // Focus the first input
         const firstInput = overlay.querySelector('input, select, textarea');
         if (firstInput) setTimeout(() => firstInput.focus(), 100);
     }
 
-    /**
-     * Remove the settings dialog if present
-     */
     function removeSettingsDialog() {
         if (settingsDialogEl) {
             settingsDialogEl.remove();
@@ -748,9 +1172,8 @@ const ChatManager = (() => {
         }
     }
 
-    /**
-     * Inject CSS styles for the settings dialog (only once)
-     */
+    // ── Inject Styles ──────────────────────────────────────────────
+
     let _settingsStylesInjected = false;
     function injectSettingsStyles() {
         if (_settingsStylesInjected) return;
@@ -758,6 +1181,7 @@ const ChatManager = (() => {
 
         const style = document.createElement('style');
         style.textContent = `
+            /* ── Settings Dialog ── */
             .chat-settings-overlay {
                 position: fixed;
                 inset: 0;
@@ -881,7 +1305,7 @@ const ChatManager = (() => {
             }
             .chat-settings-footer .btn-confirm:active { background: var(--accent-hover); }
 
-            /* Code block wrapper with copy button */
+            /* ── Code Block Wrapper ── */
             .code-block-wrapper {
                 position: relative;
                 margin: 6px 0;
@@ -920,12 +1344,16 @@ const ChatManager = (() => {
             .code-copy-btn:hover { opacity: 1; }
             .code-copy-btn:active { transform: scale(0.9); }
 
-            /* Tool message details */
+            /* ── Tool Messages ── */
             .tool-header {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 gap: 8px;
+            }
+            .tool-name {
+                font-weight: 500;
+                font-size: 12px;
             }
             .tool-status {
                 font-size: 12px;
@@ -933,6 +1361,19 @@ const ChatManager = (() => {
             }
             .tool-ok { color: var(--green); }
             .tool-fail { color: var(--red); }
+            .tool-duration {
+                font-size: 10px;
+                color: var(--text-muted);
+                font-family: var(--font-mono);
+            }
+            .tool-spinner {
+                animation: spin 1s linear infinite;
+                font-size: 14px;
+            }
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
             .tool-args {
                 font-family: var(--font-mono);
                 font-size: 11px;
@@ -942,9 +1383,59 @@ const ChatManager = (() => {
                 background: rgba(0,0,0,0.2);
                 border-radius: var(--radius-sm);
                 word-break: break-all;
+                cursor: default;
+            }
+            .tool-args.collapsed {
+                max-height: 40px;
+                overflow: hidden;
+                position: relative;
+            }
+            .tool-args.expanded {
+                max-height: none;
+            }
+            .tool-args.collapsed::after {
+                content: '...';
+                position: absolute;
+                bottom: 0;
+                right: 4px;
+                background: linear-gradient(transparent, rgba(0,0,0,0.3));
+                padding-left: 20px;
+            }
+            .tool-result {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-secondary);
+                margin-top: 4px;
+                padding: 6px 8px;
+                background: rgba(0,0,0,0.15);
+                border-radius: var(--radius-sm);
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-height: 300px;
+                overflow-y: auto;
+            }
+            .tool-result.tool-waiting {
+                color: var(--text-muted);
+                font-style: italic;
+            }
+            .tool-toggle-btn {
+                display: inline-block;
+                margin-top: 4px;
+                padding: 2px 8px;
+                border: none;
+                background: var(--bg-hover);
+                color: var(--accent);
+                font-size: 11px;
+                cursor: pointer;
+                border-radius: var(--radius-sm);
+            }
+            .tool-toggle-btn:hover { background: var(--bg-active); }
+            .tool-toggle-btn:active { transform: scale(0.95); }
+            .tool-progress {
+                border-left: 2px solid var(--accent);
             }
 
-            /* Chat role badge */
+            /* ── Chat Role Badge ── */
             .chat-role-badge {
                 font-size: 10px;
                 color: var(--mauve);
@@ -952,7 +1443,105 @@ const ChatManager = (() => {
                 font-weight: 500;
             }
 
-            /* Re-send button */
+            /* ── Turn Indicator ── */
+            .chat-turn-indicator {
+                font-size: 10px;
+                color: var(--text-muted);
+                text-align: center;
+                padding: 4px 8px;
+                font-family: var(--font-mono);
+            }
+
+            /* ── Stop Button ── */
+            .chat-stop-btn {
+                width: 100%;
+                padding: 8px 0;
+                border: 1px solid var(--red);
+                background: rgba(255, 59, 48, 0.1);
+                color: var(--red);
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                border-radius: var(--radius-sm);
+                margin-bottom: 6px;
+                transition: background 0.15s ease;
+            }
+            .chat-stop-btn:hover { background: rgba(255, 59, 48, 0.2); }
+            .chat-stop-btn:active { background: rgba(255, 59, 48, 0.3); transform: scale(0.98); }
+
+            /* ── Retry Button ── */
+            .chat-retry-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                border: none;
+                background: none;
+                color: var(--accent);
+                font-size: 12px;
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: var(--radius-sm);
+                margin-top: 6px;
+            }
+            .chat-retry-btn:hover { background: var(--bg-hover); }
+            .chat-retry-btn:active { background: var(--bg-active); transform: scale(0.95); }
+
+            /* ── System Message ── */
+            .chat-system-msg {
+                font-size: 12px;
+                color: var(--text-muted);
+                font-style: italic;
+            }
+
+            /* ── Streaming ── */
+            .chat-streaming {
+                min-height: 1em;
+            }
+            .chat-streaming::after {
+                content: '▊';
+                animation: blink 0.8s steps(2) infinite;
+                color: var(--accent);
+                font-size: 0.9em;
+            }
+            @keyframes blink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0; }
+            }
+
+            /* ── Markdown headings ── */
+            .md-h1 { font-size: 16px; display: block; margin: 8px 0 4px; }
+            .md-h2 { font-size: 14px; display: block; margin: 6px 0 3px; }
+            .md-h3 { font-size: 13px; display: block; margin: 4px 0 2px; }
+
+            /* ── Markdown links ── */
+            .chat-content a,
+            .chat-msg a {
+                color: var(--accent);
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
+            .chat-content a:hover,
+            .chat-msg a:hover {
+                opacity: 0.85;
+            }
+
+            /* ── Markdown blockquote ── */
+            blockquote {
+                border-left: 3px solid var(--accent);
+                margin: 6px 0;
+                padding: 4px 10px;
+                color: var(--text-muted);
+                font-style: italic;
+            }
+
+            /* ── Markdown hr ── */
+            hr {
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 8px 0;
+            }
+
+            /* ── Re-send button ── */
             .chat-resend-btn {
                 display: inline-flex;
                 align-items: center;
@@ -974,9 +1563,6 @@ const ChatManager = (() => {
 
     // ── Input Auto-Resize ──────────────────────────────────────────
 
-    /**
-     * Auto-resize the chat textarea based on content
-     */
     function autoResizeInput() {
         const input = document.getElementById('chat-input');
         if (!input) return;
@@ -986,9 +1572,6 @@ const ChatManager = (() => {
 
     // ── Wire Up Events ─────────────────────────────────────────────
 
-    /**
-     * Bind all DOM events for the chat interface
-     */
     function wireEvents() {
         // Send button
         const sendBtn = document.getElementById('chat-send');
@@ -1002,15 +1585,12 @@ const ChatManager = (() => {
         // Chat input
         const input = document.getElementById('chat-input');
         if (input) {
-            // Enter to send, Shift+Enter for newline
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                     e.preventDefault();
                     sendMessage();
                 }
             });
-
-            // Auto-resize on input
             input.addEventListener('input', autoResizeInput);
         }
 
@@ -1023,37 +1603,37 @@ const ChatManager = (() => {
             });
         }
 
-        // Settings button in chat header — create if not present
+        // Settings button in chat header
         wireSettingsButton();
 
-        // Delegate click events on chat messages for code copy, resend, etc.
+        // Delegate click events on chat messages
         const msgContainer = document.getElementById('chat-messages');
         if (msgContainer) {
             msgContainer.addEventListener('click', (e) => {
-                // Code copy buttons
-                if (e.target.classList.contains('code-copy-btn')) {
-                    // Handled by bindCopyButtons above
-                    return;
-                }
-                // Re-send button (delegated)
+                if (e.target.classList.contains('code-copy-btn')) return;
                 if (e.target.closest('.chat-resend-btn')) {
                     resendLastMessage();
                 }
+                if (e.target.closest('.chat-retry-btn')) {
+                    // Handled by event listener on the button itself
+                }
+                // Toggle tool args expand/collapse
+                if (e.target.closest('.tool-args.collapsed')) {
+                    e.target.closest('.tool-args').classList.toggle('collapsed');
+                    e.target.closest('.tool-args').classList.toggle('expanded');
+                }
             });
         }
+
+        // Initialize auto-scroll behavior
+        initAutoScroll();
     }
 
-    /**
-     * Add a settings gear button to the chat sidebar header if not present
-     */
     function wireSettingsButton() {
         const header = document.getElementById('sidebar-right-header');
         if (!header) return;
-
-        // Check if settings button already exists
         if (header.querySelector('.chat-settings-btn')) return;
 
-        // Find the button group div (contains clear and close buttons)
         const btnGroup = header.querySelector('div');
         if (!btnGroup) return;
 
@@ -1073,7 +1653,6 @@ const ChatManager = (() => {
             settingsBtn.style.background = 'none';
         });
 
-        // Insert before the clear button
         const clearBtn = document.getElementById('chat-clear');
         if (clearBtn) {
             btnGroup.insertBefore(settingsBtn, clearBtn);
@@ -1084,17 +1663,11 @@ const ChatManager = (() => {
 
     // ── Initialize ─────────────────────────────────────────────────
 
-    /**
-     * Initialize the ChatManager — load history and wire events
-     */
     async function init() {
         wireEvents();
         await loadHistory();
-
-        // Auto-resize input if present
         autoResizeInput();
-
-        console.log('ChatManager: initialized');
+        console.log('ChatManager: initialized (SSE streaming enabled)');
     }
 
     // Auto-init when DOM is ready
@@ -1111,7 +1684,7 @@ const ChatManager = (() => {
         sendMessage,
         clearHistory,
         loadHistory,
-        scrollToBottom,
+        scrollToBottom: forceScrollToBottom,
         showSettingsDialog,
         removeSettingsDialog,
         loadLLMConfig,
@@ -1124,6 +1697,7 @@ const ChatManager = (() => {
         renderMarkdownLite,
         bindCopyButtons,
         autoResizeInput,
+        abortGeneration,
 
         // Getters
         get isProcessing() { return isProcessing; },
@@ -1132,5 +1706,4 @@ const ChatManager = (() => {
     };
 })();
 
-// Expose globally
 window.ChatManager = ChatManager;
