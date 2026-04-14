@@ -1,28 +1,37 @@
+# PhoneIDE Worklog
+
 ---
-Task ID: 2
+Task ID: 1
 Agent: Main Agent
-Task: Claude Code 风格 AI Agent 引擎重构 + 服务器管理 + IDE 更新 + APK 功能增强
+Task: 研究 ctz168/stableclaw_android 的 Termux 封装方式并重构 phoneide APK
 
 Work Log:
-- 研究了 Claude Code 开源项目的执行引擎架构（异步生成器 Agent Loop、42+ 工具、并发系统、权限模型、上下文压缩）
-- 分析了现有 AI Agent 实现的不足（单轮工具调用、无流式输出、工具描述简陋）
-- 重写 server.py LLM 部分（1041-1493行 → 1041-2761行），新增 1718 行代码
-- 重写 chat.js（1136行 → 1709行），新增 573 行代码
-- 扩展 app.js（634行 → 1028行），新增 394 行代码
-- 扩展 index.html（262行 → 577行），新增 315 行代码
-- 更新 Android MainActivity.kt、activity_main.xml、strings.xml
-- 修复 Kotlin 编译错误（ScrollView import、setView 歧义）
-- 重新编译 APK（6.4MB），所有代码通过语法检查
-- 推送到 GitHub
+- 研究了 ctz168/stableclaw_android 项目架构
+- 发现它不依赖外部 Termux，而是从 Termux .deb 包中提取 proot 二进制嵌入 APK
+- 使用 Apache Commons Compress 纯 Java 解压 rootfs tar.xz
+- 有完整的 BootstrapManager、ProcessManager、6个前台服务
+- 对比分析当前 phoneide APK 的 Termux 依赖问题
+
+- 新增 ProcessManager.kt (421行) - 核心proot封装，内嵌二进制到jniLibs
+- 新增 BootstrapManager.kt (367行) - Ubuntu rootfs 下载/解压/配置
+- 重写 ServerService.kt (223行) - 使用ProcessManager，自动重启+日志缓冲
+- 重写 SetupActivity.kt (195行) - 使用BootstrapManager 4步引导
+- 重写 TerminalActivity.kt (350行) - 使用ProcessManager，移除Termux依赖
+- 重写 PhoneIDEApp.kt (82行) - 新增版本信息+共享实例
+- 创建 fetch-proot-binaries.sh - 从Termux APT下载proot二进制
+- 更新 build.gradle.kts - 添加commons-compress+xz依赖
+- 更新 strings.xml - 中文化所有UI字符串
+
+- 新增 server.py 5个API端点:
+  - /api/server/status (GET) - 服务器状态
+  - /api/server/restart (POST) - 重启服务器
+  - /api/server/logs/stream (GET) - SSE日志流
+  - /api/update/check (POST) - 检查GitHub更新
+  - /api/update/apply (POST) - 应用更新
 
 Stage Summary:
-- 新增 51 个 API 路由（原 35 个）
-- 15 个 Agent 工具（原 9 个）
-- Claude Code 风格 Agent Loop（最多 15 轮迭代）
-- SSE 流式输出（text/tool_start/tool_result/thinking/done/error）
-- 服务器管理 API（status/restart/logs）
-- IDE 更新 API（check/apply）
-- Android APK: 服务器管理底栏 + 更新按钮
-- 前端: 服务器状态轮询 + 日志面板 + 更新对话框
-- APK: /home/z/my-project/download/PhoneIDE-v1.1.0-debug.apk
-- GitHub: https://github.com/ctz168/phoneide (commit bb761a0)
+- phoneide APK 从 v1.0 (依赖外部Termux) 重构为 v2.0 (自包含，内嵌proot)
+- 7个 Kotlin 文件共 2363 行
+- git 提交: e579db3 (Android重构) + 5309754 (server.py API)
+- 需要运行 fetch-proot-binaries.sh 后才能构建带proot的APK
+- 需要安装 JDK 才能编译 (当前环境仅有 JRE)
