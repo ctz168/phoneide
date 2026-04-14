@@ -45,6 +45,7 @@ class ProcessManager(private val context: Context) {
 
     /**
      * Initialize paths and fix libtalloc SONAME.
+     * Copies proot binaries from nativeLibDir to app data dir (for execution).
      * Call this once after creating ProcessManager.
      */
     fun initialize() {
@@ -55,10 +56,13 @@ class ProcessManager(private val context: Context) {
         rootfsDir = "$appDir/$ROOTFS_NAME"
         libDir = "$appDir/$LIB_DIR_NAME"
         hostIdeDir = "$appDir/$IDE_DIR_NAME"
-        prootBin = "$nativeLibDir/$PROOT_LIB"
 
         // Ensure lib directory exists
         File(libDir).mkdirs()
+
+        // Copy proot binary to app data dir for execution
+        // (nativeLibraryDir may have noexec SELinux policy)
+        setupProotBinary()
 
         // Fix libtalloc SONAME: Termux's proot links against libtalloc.so.2
         // but Android jniLibs strips the version suffix.
@@ -69,10 +73,72 @@ class ProcessManager(private val context: Context) {
 
         initialized = true
         Log.d(TAG, "ProcessManager initialized")
+        Log.d(TAG, "  appDir: $appDir")
         Log.d(TAG, "  nativeLibDir: $nativeLibDir")
         Log.d(TAG, "  rootfsDir: $rootfsDir")
+        Log.d(TAG, "  libDir: $libDir")
         Log.d(TAG, "  prootBin: $prootBin")
         Log.d(TAG, "  proot exists: ${File(prootBin).exists()}")
+        Log.d(TAG, "  proot canExecute: ${File(prootBin).exists() && File(prootBin).canExecute()}")
+    }
+
+    /**
+     * Copy proot + loader binaries from nativeLibDir to libDir (app data).
+     * Android's nativeLibraryDir may not allow direct execution due to SELinux.
+     *
+     * proot resolves its loader relative to its own binary path:
+     *   dirname(proot) -> ../libexec/proot/loader
+     * So we create: appDir/bin/proot -> appDir/libexec/proot/loader
+     */
+    private fun setupProotBinary() {
+        // Directory layout matching Termux:
+        //   appDir/bin/proot           (the proot executable)
+        //   appDir/libexec/proot/loader  (the ELF loader)
+        //   appDir/libexec/proot/loader32 (32-bit loader, arm64 only)
+        //   appDir/lib/                   (libtalloc etc.)
+        val binDir = File("$appDir/bin")
+        val libexecDir = File("$appDir/libexec/proot")
+        val libExecDir2 = File("$appDir/lib")
+        binDir.mkdirs()
+        libexecDir.mkdirs()
+        libExecDir2.mkdirs()
+
+        // Copy proot binary
+        val nativeProot = File("$nativeLibDir/$PROOT_LIB")
+        val destProot = File("$binDir/proot")
+        if (nativeProot.exists()) {
+            if (!destProot.exists() || destProot.length() != nativeProot.length()) {
+                nativeProot.copyTo(destProot, overwrite = true)
+                destProot.setExecutable(true, false)
+                destProot.setReadable(true, false)
+                destProot.setWritable(true, false)
+                Log.d(TAG, "Copied proot -> $binDir/proot (${destProot.length()} bytes)")
+            }
+        } else {
+            Log.w(TAG, "proot NOT found in nativeLibDir: $nativeProot")
+        }
+
+        // Copy loader -> libexec/proot/loader (proot resolves it relative to its own path)
+        val nativeLoader = File("$nativeLibDir/$PROOT_LOADER_LIB")
+        val destLoader = File("$libexecDir/loader")
+        if (nativeLoader.exists() && (!destLoader.exists() || destLoader.length() != nativeLoader.length())) {
+            nativeLoader.copyTo(destLoader, overwrite = true)
+            destLoader.setExecutable(true, false)
+            destLoader.setReadable(true, false)
+            Log.d(TAG, "Copied loader -> $libexecDir/loader")
+        }
+
+        // Copy loader32 -> libexec/proot/loader32 (arm64 only)
+        val nativeLoader32 = File("$nativeLibDir/$PROOT_LOADER32_LIB")
+        val destLoader32 = File("$libexecDir/loader32")
+        if (nativeLoader32.exists() && (!destLoader32.exists() || destLoader32.length() != nativeLoader32.length())) {
+            nativeLoader32.copyTo(destLoader32, overwrite = true)
+            destLoader32.setExecutable(true, false)
+            destLoader32.setReadable(true, false)
+            Log.d(TAG, "Copied loader32 -> $libexecDir/loader32")
+        }
+
+        prootBin = "$binDir/proot"
     }
 
     private fun setupLibtalloc() {
