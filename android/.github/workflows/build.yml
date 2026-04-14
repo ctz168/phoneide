@@ -1,0 +1,129 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'server.py'
+      - 'static/**'
+      - 'requirements.txt'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/*.gradle.kts', 'android/app/*.gradle.kts') }}
+          restore-keys: gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew || true
+
+      - name: Create Gradle wrapper if missing
+        working-directory: android
+        run: |
+          if [ ! -f gradlew ]; then
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp/
+            /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
+          fi
+          chmod +x gradlew 2>/dev/null || true
+
+      - name: Build Debug APK
+        working-directory: android
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            /tmp/gradle-8.5/bin/gradle assembleDebug --no-daemon
+          fi
+
+      - name: Build Release APK (signed)
+        if: github.event_name != 'pull_request'
+        working-directory: android
+        run: |
+          # Create keystore for signing
+          keytool -genkeypair \
+            -v -keystore release.keystore \
+            -alias phoneide \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -storepass phoneide123 \
+            -keypass phoneide123 \
+            -dname "CN=PhoneIDE, OU=Dev, O=PhoneIDE, L=Unknown, ST=Unknown, C=CN"
+
+          if [ -f gradlew ]; then
+            ./gradlew assembleRelease --no-daemon \
+              -Pandroid.injected.signing.store.file=release.keystore \
+              -Pandroid.injected.signing.store.password=phoneide123 \
+              -Pandroid.injected.signing.key.alias=phoneide \
+              -Pandroid.injected.signing.key.password=phoneide123
+          else
+            /tmp/gradle-8.5/bin/gradle assembleRelease --no-daemon \
+              -Pandroid.injected.signing.store.file=release.keystore \
+              -Pandroid.injected.signing.store.password=phoneide123 \
+              -Pandroid.injected.signing.key.alias=phoneide \
+              -Pandroid.injected.signing.key.password=phoneide123
+          fi
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhoneIDE-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload Release APK
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhoneIDE-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: PhoneIDE v1.0.${{ github.run_number }}
+          body: |
+            ## PhoneIDE Android APK
+
+            自动构建版本，包含所有最新更改。
+
+            ### 安装方式
+            1. 下载 `PhoneIDE-release.apk`
+            2. 在手机上启用"允许安装未知来源应用"
+            3. 打开 APK 文件安装
+
+            ### 首次使用
+            1. 确保已安装 [Termux](https://f-droid.org/packages/com.termux/)（从 F-Droid 安装）
+            2. 打开 PhoneIDE，按照向导完成初始化
+            3. 初始化过程会自动设置 proot Ubuntu 环境
+
+            > 注意：需要约 500MB 空间用于 Ubuntu 环境
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: false
