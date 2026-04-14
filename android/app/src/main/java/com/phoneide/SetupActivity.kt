@@ -146,8 +146,15 @@ class SetupActivity : AppCompatActivity() {
                     val success = bootstrapManager.bootstrap()
                     if (!success) {
                         appendLog("  Bootstrap 失败!")
-                        appendLog("  请检查网络连接后重试")
-                        showActions(btnRetry)
+                        appendLog("  你可以跳过，稍后在终端中手动操作")
+                        appendLog("  或点击重试再次尝试")
+                        // Show both skip and retry buttons
+                        runOnUiThread {
+                            setupActions.visibility = View.VISIBLE
+                            btnRetry.visibility = View.VISIBLE
+                            btnContinue.visibility = View.VISIBLE
+                            btnContinue.text = "跳过（进终端）"
+                        }
                         return@launch
                     }
                     appendLog("  Ubuntu rootfs 配置完成 ✓")

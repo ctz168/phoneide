@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     // Server management bar views
     private lateinit var statusIndicator: View
     private lateinit var statusLabel: TextView
+    private lateinit var btnTerminal: View
     private lateinit var btnRestart: View
     private lateinit var btnLogs: View
     private lateinit var btnUpdate: View
@@ -134,9 +135,13 @@ class MainActivity : AppCompatActivity() {
         retryButton.setOnClickListener { connectToServer() }
 
         // Server management button handlers
+        btnTerminal = findViewById(R.id.btn_terminal)
         btnRestart.setOnClickListener { handleRestart() }
         btnLogs.setOnClickListener { handleShowLogs() }
         btnUpdate.setOnClickListener { handleCheckUpdate() }
+        btnTerminal.setOnClickListener {
+            startActivity(Intent(this, TerminalActivity::class.java))
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
