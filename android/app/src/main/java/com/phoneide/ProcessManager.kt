@@ -150,7 +150,7 @@ class ProcessManager(private val context: Context) {
         // Add extra env vars
         env?.forEach { (k, v) -> envList.add("$k=$v") }
 
-        envList.add("sh", "-c", command)
+        envList.addAll(listOf("sh", "-c", command))
 
         return (args + envList).toTypedArray()
     }
@@ -280,7 +280,7 @@ class ProcessManager(private val context: Context) {
 
     private fun executeCommand(cmdArray: Array<String>, timeoutMs: Long): CommandResult {
         val startTime = System.currentTimeMillis()
-        return try {
+        try {
             val pb = ProcessBuilder(*cmdArray)
             pb.redirectErrorStream(true)
             pb.environment()["LD_LIBRARY_PATH"] = libDir
@@ -294,11 +294,12 @@ class ProcessManager(private val context: Context) {
                 output.append(line).append("\n")
                 notifyOutput(line ?: "")
             }
+            reader.close()
 
             val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
             if (!finished) {
                 process.destroyForcibly()
-                CommandResult(
+                return CommandResult(
                     success = false,
                     stdout = output.toString(),
                     stderr = "Command timed out after ${timeoutMs}ms",
@@ -306,7 +307,7 @@ class ProcessManager(private val context: Context) {
                     durationMs = System.currentTimeMillis() - startTime
                 )
             } else {
-                CommandResult(
+                return CommandResult(
                     success = process.exitValue() == 0,
                     stdout = output.toString(),
                     stderr = "",
@@ -314,10 +315,9 @@ class ProcessManager(private val context: Context) {
                     durationMs = System.currentTimeMillis() - startTime
                 )
             }
-            reader.close()
         } catch (e: Exception) {
             Log.e(TAG, "Command execution failed", e)
-            CommandResult(
+            return CommandResult(
                 success = false,
                 stdout = "",
                 stderr = e.message ?: "Unknown error",

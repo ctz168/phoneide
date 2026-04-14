@@ -44,6 +44,16 @@
             android:tint="#8B949E" />
 
         <ImageButton
+            android:id="@+id/btn_session_switch"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="切换会话"
+            android:src="@android:drawable/ic_menu_manage"
+            android:tint="#8B949E"
+            android:visibility="gone" />
+
+        <ImageButton
             android:id="@+id/btn_font_size_down"
             android:layout_width="32dp"
             android:layout_height="32dp"

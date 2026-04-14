@@ -35,7 +35,7 @@ class TerminalActivity : AppCompatActivity() {
     private lateinit var btnClose: View
     private lateinit var btnFontSizeUp: View
     private lateinit var btnFontSizeDown: View
-    private lateinit var btnSessionSwitch: View
+    private var btnSessionSwitch: View? = null
 
     private var currentFontSize = 13
     private var sessionProcess: Process? = null
@@ -69,8 +69,8 @@ class TerminalActivity : AppCompatActivity() {
         btnFontSizeUp = findViewById(R.id.btn_font_size_up)
         btnFontSizeDown = findViewById(R.id.btn_font_size_down)
 
-        // Try to find session switch button (may not exist in old layout)
-        btnSessionSwitch = findViewById<View?>(R.id.btn_session_switch) ?: View(this)
+        // Session switch button is optional
+        btnSessionSwitch = findViewById<View>(R.id.btn_session_switch)
 
         btnClose.setOnClickListener { finish() }
         btnFontSizeUp.setOnClickListener { adjustFontSize(1) }
