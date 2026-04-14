@@ -149,7 +149,7 @@ class TerminalActivity : AppCompatActivity() {
         // Input area
         inputLine = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            backgroundColor = Color.parseColor("#161B22")
+            setBackgroundColor(Color.parseColor("#161B22"))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 8, 8, 8)
             layoutParams = LinearLayout.LayoutParams(
