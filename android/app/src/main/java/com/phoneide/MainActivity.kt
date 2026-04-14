@@ -27,7 +27,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.IOException
@@ -619,7 +619,7 @@ class MainActivity : AppCompatActivity() {
             val client = if (useUpdateClient) updateHttpClient else httpClient
             val request = Request.Builder()
                 .url("${PhoneIDEApp.SERVER_URL}$path")
-                .post(RequestBody.create(null, byteArrayOf()))
+                .post("".toRequestBody(null))
                 .build()
             val response = client.newCall(request).execute()
             response.close()
@@ -634,7 +634,7 @@ class MainActivity : AppCompatActivity() {
         return try {
             val request = Request.Builder()
                 .url("${PhoneIDEApp.SERVER_URL}$path")
-                .post(RequestBody.create(null, byteArrayOf()))
+                .post("".toRequestBody(null))
                 .build()
             val response = httpClient.newCall(request).execute()
             val body = response.body?.string()

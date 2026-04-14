@@ -205,10 +205,12 @@ class BootstrapManager(
                             }
                             entry.isFile -> {
                                 entryFile.parentFile?.mkdirs()
-                                val buf = ByteArray(8192)
-                                var len: Int
-                                while (tarIn.read(buf).also { len = it } != -1) {
-                                    entryFile.appendBytes(buf, 0, len)
+                                FileOutputStream(entryFile).use { fos ->
+                                    val buf = ByteArray(8192)
+                                    var len: Int
+                                    while (tarIn.read(buf).also { len = it } != -1) {
+                                        fos.write(buf, 0, len)
+                                    }
                                 }
                                 // Preserve permissions
                                 if (entry.mode > 0) {
