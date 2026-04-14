@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.phoneide_tmp.py
+.phoneide_agent_tmp.py
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+phoneide_workspace/
+.venv/
+.env

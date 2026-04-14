@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PhoneIDE</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- CodeMirror 6 CSS from CDN -->
+    <!-- Use these CDN links for CodeMirror 6: -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.css">
+</head>
+<body>
+    <!-- Top Toolbar -->
+    <header id="toolbar">
+        <button id="btn-menu" title="文件">☰</button>
+        <span id="file-name">未打开文件</span>
+        <div id="toolbar-actions">
+            <button id="btn-undo" title="撤销">↩</button>
+            <button id="btn-redo" title="重做">↪</button>
+            <button id="btn-save" title="保存">💾</button>
+            <button id="btn-run" title="运行">▶</button>
+            <button id="btn-stop" title="停止" style="display:none">⏹</button>
+            <button id="btn-chat" title="AI助手">🤖</button>
+        </div>
+    </header>
+
+    <!-- Left Sidebar -->
+    <div id="sidebar-left" class="sidebar left">
+        <div id="sidebar-left-header">
+            <h3>PhoneIDE</h3>
+            <button id="close-left">✕</button>
+        </div>
+        <!-- Tabs -->
+        <div id="left-tabs">
+            <button class="tab active" data-tab="files">📁 文件</button>
+            <button class="tab" data-tab="git">🔀 Git</button>
+            <button class="tab" data-tab="search">🔍 搜索</button>
+            <button class="tab" data-tab="debug">🐛 调试</button>
+        </div>
+        <!-- Tab Panels -->
+        <div id="left-panels">
+            <!-- Files Panel -->
+            <div id="panel-files" class="panel active">
+                <div class="panel-toolbar">
+                    <button id="btn-open-folder" title="打开文件夹">📂</button>
+                    <button id="btn-new-file" title="新建文件">➕</button>
+                    <button id="btn-new-folder" title="新建文件夹">📁+</button>
+                    <input type="text" id="workspace-path" placeholder="工作区路径" readonly>
+                </div>
+                <div id="file-tree"></div>
+            </div>
+            <!-- Git Panel -->
+            <div id="panel-git" class="panel">
+                <div class="panel-toolbar">
+                    <button id="git-clone" title="克隆">📥 克隆</button>
+                    <button id="git-pull" title="拉取">⬇ 拉取</button>
+                    <button id="git-push" title="推送">⬆ 推送</button>
+                    <button id="git-sync" title="同步">🔄</button>
+                    <button id="git-refresh" title="刷新">🔃</button>
+                </div>
+                <div id="git-branch-info">
+                    <span id="git-current-branch">-</span>
+                    <span id="git-status-count"></span>
+                </div>
+                <div id="git-changes-list"></div>
+                <div id="git-commit-area">
+                    <textarea id="git-commit-msg" placeholder="提交信息..." rows="2"></textarea>
+                    <button id="git-commit-btn">提交</button>
+                </div>
+                <div id="git-log-list"></div>
+            </div>
+            <!-- Search Panel -->
+            <div id="panel-search" class="panel">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="搜索...">
+                    <button id="search-btn">搜索</button>
+                </div>
+                <div class="search-options">
+                    <label><input type="checkbox" id="search-case"> 区分大小写</label>
+                    <label><input type="checkbox" id="search-regex"> 正则</label>
+                    <input type="text" id="search-file-pattern" placeholder="文件过滤 (*.py)">
+                </div>
+                <div id="search-results"></div>
+            </div>
+            <!-- Debug Panel -->
+            <div id="panel-debug" class="panel">
+                <div class="panel-toolbar">
+                    <select id="compiler-select">
+                        <option value="python3">Python 3</option>
+                    </select>
+                    <button id="venv-btn" title="虚拟环境">🐍</button>
+                </div>
+                <div id="debug-config">
+                    <div id="venv-info">
+                        <span>虚拟环境: </span><span id="current-venv">未设置</span>
+                    </div>
+                    <button id="create-venv-btn">创建虚拟环境</button>
+                    <button id="install-pkg-btn">安装包</button>
+                </div>
+                <div id="debug-breakpoints"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Editor Area -->
+    <main id="main-area">
+        <div id="editor-toolbar">
+            <input type="text" id="editor-search" placeholder="在文件中查找..." style="display:none">
+            <input type="text" id="editor-replace" placeholder="替换..." style="display:none">
+            <button id="editor-search-btn" title="查找">🔍</button>
+        </div>
+        <div id="editor-container">
+            <textarea id="code-editor"></textarea>
+        </div>
+        <!-- Bottom Panel (Debug Output / Terminal) -->
+        <div id="bottom-panel" class="hidden">
+            <div id="bottom-panel-header">
+                <span>输出</span>
+                <button id="bottom-panel-close">✕</button>
+                <button id="bottom-panel-clear">🗑 清空</button>
+            </div>
+            <div id="output-content"></div>
+        </div>
+        <div id="bottom-panel-resize"></div>
+    </main>
+
+    <!-- Right Sidebar (Chat) -->
+    <div id="sidebar-right" class="sidebar right">
+        <div id="sidebar-right-header">
+            <h3>🤖 AI 助手</h3>
+            <div>
+                <button id="chat-clear" title="清空记录">🗑</button>
+                <button id="close-right">✕</button>
+            </div>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-area">
+            <div id="chat-execute-status"></div>
+            <textarea id="chat-input" placeholder="输入消息... (Enter发送)" rows="2"></textarea>
+            <button id="chat-send">发送</button>
+        </div>
+    </div>
+
+    <!-- Overlays/Modals -->
+    <div id="overlay" class="hidden"></div>
+
+    <!-- Dialogs -->
+    <div id="dialog-overlay" class="hidden">
+        <div id="dialog">
+            <div id="dialog-title"></div>
+            <div id="dialog-body"></div>
+            <div id="dialog-buttons"></div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="hidden"></div>
+
+    <!-- CodeMirror 5 JS from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/jump-to-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/indent-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/comment-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/display/placeholder.min.js"></script>
+
+    <!-- App Scripts -->
+    <script src="/js/files.js"></script>
+    <script src="/js/git.js"></script>
+    <script src="/js/search.js"></script>
+    <script src="/js/terminal.js"></script>
+    <script src="/js/chat.js"></script>
+    <script src="/js/editor.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
