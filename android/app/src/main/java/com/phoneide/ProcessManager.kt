@@ -6,6 +6,8 @@ import android.util.Log
 import java.io.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
 /**
  * ProcessManager - Core class for managing proot processes.
@@ -103,36 +105,49 @@ class ProcessManager(private val context: Context) {
         libexecDir.mkdirs()
         libExecDir2.mkdirs()
 
-        // Copy proot binary
+        // Detect primary ABI for this device
+        val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        val libAbi = if (primaryAbi.startsWith("arm64")) "arm64-v8a" else if (primaryAbi.startsWith("armeabi")) "armeabi-v7a" else primaryAbi
+
+        // Check if nativeLibDir has the files; if not, try extracting from APK directly
         val nativeProot = File("$nativeLibDir/$PROOT_LIB")
+        val useApkFallback = !nativeProot.exists()
+
+        if (useApkFallback) {
+            Log.w(TAG, "nativeLibDir empty, extracting from APK (abi=$libAbi)")
+            extractFromApk(libAbi)
+        }
+
+        // Copy proot binary from nativeLibDir (or extracted fallback)
+        val srcProot = File("$nativeLibDir/$PROOT_LIB")
         val destProot = File("$binDir/proot")
-        if (nativeProot.exists()) {
-            if (!destProot.exists() || destProot.length() != nativeProot.length()) {
-                nativeProot.copyTo(destProot, overwrite = true)
+        if (srcProot.exists()) {
+            if (!destProot.exists() || destProot.length() != srcProot.length()) {
+                srcProot.copyTo(destProot, overwrite = true)
                 destProot.setExecutable(true, false)
                 destProot.setReadable(true, false)
                 destProot.setWritable(true, false)
                 Log.d(TAG, "Copied proot -> $binDir/proot (${destProot.length()} bytes)")
             }
         } else {
-            Log.w(TAG, "proot NOT found in nativeLibDir: $nativeProot")
+            Log.e(TAG, "proot NOT found anywhere! nativeLibDir=$nativeLibDir, abi=$libAbi")
         }
 
         // Copy loader -> libexec/proot/loader (proot resolves it relative to its own path)
-        val nativeLoader = File("$nativeLibDir/$PROOT_LOADER_LIB")
+        val srcLoader = File("$nativeLibDir/$PROOT_LOADER_LIB")
         val destLoader = File("$libexecDir/loader")
-        if (nativeLoader.exists() && (!destLoader.exists() || destLoader.length() != nativeLoader.length())) {
-            nativeLoader.copyTo(destLoader, overwrite = true)
+        if (srcLoader.exists() && (!destLoader.exists() || destLoader.length() != srcLoader.length())) {
+            srcLoader.copyTo(destLoader, overwrite = true)
             destLoader.setExecutable(true, false)
             destLoader.setReadable(true, false)
             Log.d(TAG, "Copied loader -> $libexecDir/loader")
         }
 
         // Copy loader32 -> libexec/proot/loader32 (arm64 only)
-        val nativeLoader32 = File("$nativeLibDir/$PROOT_LOADER32_LIB")
+        val srcLoader32 = File("$nativeLibDir/$PROOT_LOADER32_LIB")
         val destLoader32 = File("$libexecDir/loader32")
-        if (nativeLoader32.exists() && (!destLoader32.exists() || destLoader32.length() != nativeLoader32.length())) {
-            nativeLoader32.copyTo(destLoader32, overwrite = true)
+        if (srcLoader32.exists() && (!destLoader32.exists() || destLoader32.length() != srcLoader32.length())) {
+            srcLoader32.copyTo(destLoader32, overwrite = true)
             destLoader32.setExecutable(true, false)
             destLoader32.setReadable(true, false)
             Log.d(TAG, "Copied loader32 -> $libexecDir/loader32")
@@ -141,12 +156,55 @@ class ProcessManager(private val context: Context) {
         prootBin = "$binDir/proot"
     }
 
+    /**
+     * Fallback: extract native libs directly from APK file.
+     * This handles the case where extractNativeLibs=false and
+     * the system didn't unpack .so files to nativeLibraryDir.
+     */
+    private fun extractFromApk(abi: String) {
+        val apkPath = context.applicationInfo.sourceDir ?: return
+        val libs = listOf(PROOT_LIB, PROOT_LOADER_LIB, PROOT_LOADER32_LIB, LIBTALLOC_LIB)
+        Log.d(TAG, "Extracting native libs from APK: $apkPath")
+
+        try {
+            ZipFile(apkPath).use { zip ->
+                for (libName in libs) {
+                    val entryName = "lib/$abi/$libName"
+                    val entry: ZipEntry? = zip.getEntry(entryName)
+                    if (entry != null) {
+                        val destFile = File(nativeLibDir, libName)
+                        zip.getInputStream(entry).use { input ->
+                            FileOutputStream(destFile).use { output ->
+                                val buf = ByteArray(8192)
+                                var len: Int
+                                while (input.read(buf).also { len = it } != -1) {
+                                    output.write(buf, 0, len)
+                                }
+                            }
+                        }
+                        destFile.setExecutable(true, false)
+                        destFile.setReadable(true, false)
+                        Log.d(TAG, "Extracted $entryName -> $destFile (${destFile.length()} bytes)")
+                    } else {
+                        Log.d(TAG, "  $entryName not found in APK (skipped)")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract from APK: ${e.message}")
+        }
+    }
+
     private fun setupLibtalloc() {
         val source = File("$nativeLibDir/$LIBTALLOC_LIB")
         val target = File("$libDir/libtalloc.so.2")
-        if (source.exists() && !target.exists()) {
-            source.copyTo(target)
-            Log.d(TAG, "Created libtalloc.so.2 SONAME symlink")
+        if (source.exists()) {
+            if (!target.exists() || target.length() != source.length()) {
+                source.copyTo(target, overwrite = true)
+                Log.d(TAG, "Created libtalloc.so.2 (${target.length()} bytes)")
+            }
+        } else {
+            Log.w(TAG, "libtalloc.so NOT found in nativeLibDir: $nativeLibDir/$LIBTALLOC_LIB")
         }
     }
 

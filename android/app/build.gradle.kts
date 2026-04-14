@@ -11,8 +11,8 @@ android {
         applicationId = "com.phoneide"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "2.0.1"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -42,6 +42,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "META-INF/DEPENDENCIES",
