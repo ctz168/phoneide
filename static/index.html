@@ -223,6 +223,13 @@
                 <div id="update-current-version"></div>
                 <div id="update-status"></div>
                 <div id="update-info" class="hidden"></div>
+                <div id="update-token-section">
+                    <label for="update-github-token">GitHub Token (for private repo pull):</label>
+                    <div style="display:flex;gap:6px;margin-top:4px;">
+                        <input type="password" id="update-github-token" placeholder="ghp_xxxxxxxxxxxx" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid #555;background:#2a2a2a;color:#ddd;font-size:13px;">
+                        <button id="update-save-token" class="btn-secondary" style="padding:6px 12px;font-size:12px;white-space:nowrap;">Save</button>
+                    </div>
+                </div>
             </div>
             <div id="update-dialog-actions">
                 <button id="update-check-btn" class="btn-secondary">Check for Updates</button>
@@ -381,6 +388,15 @@
         }
         #update-info.hidden {
             display: none;
+        }
+        #update-token-section {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        #update-token-section label {
+            font-size: 12px;
+            color: var(--text-muted, #888);
         }
         .update-progress-bar {
             height: 4px;

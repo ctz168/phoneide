@@ -719,6 +719,7 @@ const AppManager = (() => {
         const updateCheckBtn = document.getElementById('update-check-btn');
         const updateApplyBtn = document.getElementById('update-apply-btn');
         const updateCloseBtn = document.getElementById('update-close-btn');
+        const updateSaveTokenBtn = document.getElementById('update-save-token');
 
         if (updateCheckBtn) {
             updateCheckBtn.addEventListener('click', () => checkUpdates());
@@ -729,6 +730,28 @@ const AppManager = (() => {
         if (updateCloseBtn) {
             updateCloseBtn.addEventListener('click', () => {
                 document.getElementById('update-dialog-overlay').classList.add('hidden');
+            });
+        }
+        // Save GitHub token to server config
+        if (updateSaveTokenBtn) {
+            updateSaveTokenBtn.addEventListener('click', async () => {
+                const input = document.getElementById('update-github-token');
+                if (!input) return;
+                const token = input.value.trim();
+                try {
+                    const resp = await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ github_token: token })
+                    });
+                    if (resp.ok) {
+                        showToast('Token saved', 'success', 2000);
+                    } else {
+                        showToast('Save failed', 'error', 2000);
+                    }
+                } catch (e) {
+                    showToast('Save failed: ' + e.message, 'error', 2000);
+                }
             });
         }
 
@@ -972,6 +995,19 @@ const AppManager = (() => {
         if (infoEl) { infoEl.classList.add('hidden'); infoEl.textContent = ''; }
         if (applyBtn) applyBtn.classList.add('hidden');
         if (checkBtn) checkBtn.disabled = true;
+
+        // Load saved GitHub token (masked)
+        try {
+            const cfgResp = await fetch('/api/config');
+            if (cfgResp.ok) {
+                const cfg = await cfgResp.json();
+                const tokenInput = document.getElementById('update-github-token');
+                if (tokenInput && cfg.github_token) {
+                    tokenInput.value = cfg.github_token;
+                    tokenInput.placeholder = 'ghp_****' + cfg.github_token.slice(-4);
+                }
+            }
+        } catch (_e) {}
 
         try {
             const resp = await fetch('/api/update/check', { method: 'POST' });

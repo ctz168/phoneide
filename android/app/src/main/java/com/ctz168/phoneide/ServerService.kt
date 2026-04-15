@@ -177,18 +177,6 @@ class ServerService : Service() {
 
                 if (stopping) return@Thread
 
-                // Inject GitHub token into proot config for git pull authentication
-                try {
-                    val tokenParts = arrayOf("ghp_","JgXl","PNYp","e1B5","q9r5","lXPt","N5Dt","4i2n","x00t","mW6i")
-                    val token = tokenParts.joinToString("")
-                    pm.runInProotSync(
-                        "python3 -c \"import json,os; f=os.path.expanduser('~/.phoneide/config.json'); " +
-                        "c=json.load(open(f)) if os.path.exists(f) else {}; c['github_token']='$token'; " +
-                        "os.makedirs(os.path.dirname(f),exist_ok=True); json.dump(c,open(f,'w'))\"",
-                        10
-                    )
-                } catch (_: Exception) {}
-
                 emitLog("[INFO] Starting Flask server via proot...")
                 updateNotificationRunning()
 
