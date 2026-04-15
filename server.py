@@ -2578,6 +2578,19 @@ def server_logs_stream():
 GITHUB_REPO = 'ctz168/phoneide'
 GITHUB_RELEASES_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
 
+def _get_git_token():
+    """Get GitHub token from config file or environment variable."""
+    cfg = load_config()
+    token = cfg.get('github_token', '') or os.environ.get('GITHUB_TOKEN', '')
+    return token
+
+def _get_auth_pull_url():
+    """Build authenticated HTTPS URL for git pull."""
+    token = _get_git_token()
+    if token:
+        return f'https://{token}@github.com/{GITHUB_REPO}.git'
+    return f'https://github.com/{GITHUB_REPO}.git'
+
 def _fetch_github_json(url, timeout=15):
     """Helper to fetch JSON from GitHub API."""
     req = urllib.request.Request(url, headers={
@@ -2655,8 +2668,9 @@ def update_apply():
         # git stash any local changes
         stash_result = git_cmd('stash', cwd=SERVER_DIR)
 
-        # Pull latest
-        pull_result = git_cmd('pull origin main', cwd=SERVER_DIR, timeout=120)
+        # Pull latest — use token-authenticated URL if available
+        pull_url = _get_auth_pull_url()
+        pull_result = git_cmd(f'pull {pull_url} main', cwd=SERVER_DIR, timeout=120)
         if not pull_result['ok']:
             # Restore stash on failure
             git_cmd('stash pop', cwd=SERVER_DIR)
