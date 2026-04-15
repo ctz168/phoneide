@@ -1,0 +1,7 @@
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/SetupActivity.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/ProcessManager.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/BootstrapManager.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/TerminalActivity.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/PhoneIDEApp.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/ServerService.kt
+/home/z/my-project/phoneide/android/app/src/main/java/com/ctz168/phoneide/MainActivity.kt

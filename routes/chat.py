@@ -11,6 +11,7 @@ import subprocess
 import fnmatch
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime
 from flask import Blueprint, jsonify, request, Response
 from utils import (
@@ -27,7 +28,7 @@ DEFAULT_SYSTEM_PROMPT = f"""You are PhoneIDE AI Agent, a powerful coding assista
 You have access to tools that let you read/write files, execute code, search projects, manage git, and more.
 
 ## Available Tools
-You have 15 tools available. When you need to perform an action, call the appropriate tool using function calling.
+You have 19 tools available. When you need to perform an action, call the appropriate tool using function calling.
 For multi-step tasks, think step by step and use tools in sequence.
 
 ## Important Rules
@@ -439,6 +440,95 @@ AGENT_TOOLS = [
     {
         'type': 'function',
         'function': {
+            'name': 'web_search',
+            'description': (
+                'Search the web for information using DuckDuckGo. Returns a list of search results with titles, URLs, and snippets. '
+                'Useful for finding documentation, APIs, libraries, or solutions to coding problems.'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'query': {
+                        'type': 'string',
+                        'description': 'Search query string',
+                    },
+                },
+                'required': ['query'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'web_fetch',
+            'description': (
+                'Fetch a web page and return its text content. Strips HTML tags and returns plain text. '
+                'Useful for reading documentation, API references, or any web page content. Max 10000 characters.'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'url': {
+                        'type': 'string',
+                        'description': 'URL to fetch',
+                    },
+                },
+                'required': ['url'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'git_log',
+            'description': (
+                'Show git commit history. Returns a list of recent commits in oneline format.'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'count': {
+                        'type': 'integer',
+                        'description': 'Number of commits to show. Default: 10',
+                        'default': 10,
+                    },
+                    'repo_path': {
+                        'type': 'string',
+                        'description': 'Path to the git repository. Default: workspace root',
+                        'default': WORKSPACE,
+                    },
+                },
+                'required': [],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'git_checkout',
+            'description': (
+                'Switch to a different git branch or restore working tree files.'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'branch': {
+                        'type': 'string',
+                        'description': 'Branch name or reference to checkout',
+                    },
+                    'repo_path': {
+                        'type': 'string',
+                        'description': 'Path to the git repository. Default: workspace root',
+                        'default': WORKSPACE,
+                    },
+                },
+                'required': ['branch'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
             'name': 'delete_path',
             'description': (
                 'Delete a file or directory. WARNING: This is a destructive and irreversible operation. '
@@ -789,6 +879,80 @@ def _tool_create_directory(args):
     os.makedirs(path, exist_ok=True)
     return f'Directory created: {path}'
 
+def _tool_web_search(args):
+    query = args.get('query', '')
+    try:
+        url = 'https://html.duckduckgo.com/html/?q=' + urllib.parse.quote_plus(query)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; PhoneIDE Bot)'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html_content = resp.read().decode('utf-8', errors='ignore')
+        results = []
+        for match in re.finditer(r'<a rel="nofollow" class="result__a" href="([^"]+)">([^<]+)</a>.*?<a class="result__snippet"[^>]*>([^<]*(?:<[^a][^<]*)*)</a>', html_content, re.DOTALL):
+            link = match.group(1)
+            title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+            snippet = re.sub(r'<[^>]+>', '', match.group(3)).strip()
+            if link.startswith('//'):
+                link = 'https:' + link
+            results.append({'title': title, 'url': link, 'snippet': snippet})
+            if len(results) >= 10:
+                break
+        if not results:
+            return f'No results found for "{query}"'
+        lines = []
+        for i, r in enumerate(results, 1):
+            lines.append(f'{i}. {r["title"]}')
+            lines.append(f'   URL: {r["url"]}')
+            lines.append(f'   {r["snippet"]}')
+            lines.append('')
+        return f'Search results for "{query}" ({len(results)} results):\n' + '\n'.join(lines)
+    except Exception as e:
+        return f'Error searching: {str(e)}'
+
+def _tool_web_fetch(args):
+    url = args.get('url', '')
+    if not url:
+        return 'Error: URL is required'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; PhoneIDE Bot)'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html_content = resp.read().decode('utf-8', errors='ignore')
+        # Strip HTML tags
+        text = re.sub(r'<script[^>]*>[\s\S]*?</script>', '', html_content, flags=re.IGNORECASE)
+        text = re.sub(r'<style[^>]*>[\s\S]*?</style>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'&amp;', '&', text)
+        text = re.sub(r'&lt;', '<', text)
+        text = re.sub(r'&gt;', '>', text)
+        text = re.sub(r'&quot;', '"', text)
+        text = re.sub(r'&#39;', "'", text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) > 10000:
+            text = text[:10000] + '\n\n[truncated: content exceeds 10000 character limit]'
+        if not text:
+            return 'No text content found at the URL'
+        return f'Content from {url}:\n{text}'
+    except Exception as e:
+        return f'Error fetching URL: {str(e)}'
+
+def _tool_git_log(args):
+    count = args.get('count', 10)
+    repo_path = args.get('repo_path', WORKSPACE)
+    r = git_cmd(f'log --oneline -n {count}', cwd=repo_path)
+    if not r['ok']:
+        return f'Error: {r["stderr"]}'
+    return r['stdout'] or 'No commits found'
+
+def _tool_git_checkout(args):
+    branch = args.get('branch', '')
+    repo_path = args.get('repo_path', WORKSPACE)
+    if not branch:
+        return 'Error: branch name is required'
+    r = git_cmd(f'checkout {shlex_quote(branch)}', cwd=repo_path)
+    if r['ok']:
+        return f'Switched to branch "{branch}"'
+    return f'Error: {r["stderr"]}'
+
 def _tool_delete_path(args):
     path = _validate_path(args['path'])
     real_ws = os.path.realpath(WORKSPACE)
@@ -824,12 +988,16 @@ _TOOL_HANDLERS = {
     'git_status': _tool_git_status,
     'git_diff': _tool_git_diff,
     'git_commit': _tool_git_commit,
+    'git_log': _tool_git_log,
+    'git_checkout': _tool_git_checkout,
     'install_package': _tool_install_package,
     'list_packages': _tool_list_packages,
     'grep_code': _tool_grep_code,
     'file_info': _tool_file_info,
     'create_directory': _tool_create_directory,
     'delete_path': _tool_delete_path,
+    'web_search': _tool_web_search,
+    'web_fetch': _tool_web_fetch,
 }
 
 def execute_agent_tool(name, arguments):

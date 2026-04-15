@@ -1,0 +1,247 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.ctz168.phoneide"
+4    android:versionCode="3"
+5    android:versionName="3.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="29"
+9        android:targetSdkVersion="36" />
+10
+11    <!-- Network permissions for IDE -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:6:5-67
+12-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:6:22-64
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:7:5-79
+13-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:7:22-76
+14
+15    <!-- Storage permissions for file access -->
+16    <uses-permission
+16-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:10:5-11:38
+17        android:name="android.permission.READ_EXTERNAL_STORAGE"
+17-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:10:22-77
+18        android:maxSdkVersion="32" />
+18-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:11:9-35
+19    <uses-permission
+19-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:12:5-13:38
+20        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+20-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:12:22-78
+21        android:maxSdkVersion="29" />
+21-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:13:9-35
+22    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+22-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:14:5-15:40
+22-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:14:22-79
+23
+24    <!-- Foreground service for server -->
+25    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+25-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:18:5-77
+25-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:18:22-74
+26    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+26-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:19:5-89
+26-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:19:22-86
+27    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+27-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:20:5-77
+27-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:20:22-74
+28    <uses-permission android:name="android.permission.WAKE_LOCK" />
+28-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:21:5-68
+28-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:21:22-65
+29    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+29-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:22:5-95
+29-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:22:22-92
+30
+31    <!-- Install packages -->
+32    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+32-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:25:5-83
+32-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:25:22-80
+33
+34    <permission
+34-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
+35        android:name="com.ctz168.phoneide.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+35-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
+36        android:protectionLevel="signature" />
+36-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
+37
+38    <uses-permission android:name="com.ctz168.phoneide.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+38-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
+38-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
+39
+40    <application
+40-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:27:5-88:19
+41        android:name="com.ctz168.phoneide.PhoneIDEApp"
+41-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:28:9-36
+42        android:allowBackup="true"
+42-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:30:9-35
+43        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+43-->[androidx.core:core:1.12.0] /home/z/.gradle/caches/transforms-3/48335baf2d855e672e0490637bb3012b/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
+44        android:debuggable="true"
+45        android:extractNativeLibs="true"
+45-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:38:9-41
+46        android:icon="@mipmap/ic_launcher"
+46-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:31:9-43
+47        android:label="@string/app_name"
+47-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:32:9-41
+48        android:largeHeap="true"
+48-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:37:9-33
+49        android:networkSecurityConfig="@xml/network_security_config"
+49-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:29:9-69
+50        android:requestLegacyExternalStorage="true"
+50-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:39:9-52
+51        android:roundIcon="@mipmap/ic_launcher_round"
+51-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:33:9-54
+52        android:supportsRtl="true"
+52-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:34:9-35
+53        android:theme="@style/Theme.PhoneIDE"
+53-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:35:9-46
+54        android:usesCleartextTraffic="true" >
+54-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:36:9-44
+55
+56        <!-- Main IDE Activity -->
+57        <activity
+57-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:42:9-52:20
+58            android:name="com.ctz168.phoneide.MainActivity"
+58-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:43:13-41
+59            android:configChanges="orientation|screenSize|keyboardHidden"
+59-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:45:13-74
+60            android:exported="true"
+60-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:44:13-36
+61            android:launchMode="singleTask"
+61-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:46:13-44
+62            android:windowSoftInputMode="adjustResize" >
+62-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:47:13-55
+63            <intent-filter>
+63-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:48:13-51:29
+64                <action android:name="android.intent.action.MAIN" />
+64-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:49:17-69
+64-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:49:25-66
+65
+66                <category android:name="android.intent.category.LAUNCHER" />
+66-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:50:17-77
+66-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:50:27-74
+67            </intent-filter>
+68        </activity>
+69
+70        <!-- Terminal Activity -->
+71        <activity
+71-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:55:9-59:58
+72            android:name="com.ctz168.phoneide.TerminalActivity"
+72-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:56:13-45
+73            android:configChanges="orientation|screenSize|keyboardHidden"
+73-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:58:13-74
+74            android:exported="false"
+74-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:57:13-37
+75            android:windowSoftInputMode="adjustResize" />
+75-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:59:13-55
+76
+77        <!-- Setup Activity -->
+78        <activity
+78-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:62:9-65:52
+79            android:name="com.ctz168.phoneide.SetupActivity"
+79-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:63:13-42
+80            android:exported="false"
+80-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:64:13-37
+81            android:screenOrientation="portrait" />
+81-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:65:13-49
+82
+83        <!-- Server Foreground Service -->
+84        <service
+84-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:68:9-75:19
+85            android:name="com.ctz168.phoneide.ServerService"
+85-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:69:13-42
+86            android:exported="false"
+86-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:70:13-37
+87            android:foregroundServiceType="specialUse" >
+87-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:71:13-55
+88            <property
+88-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:72:13-74:60
+89                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+89-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:73:17-76
+90                android:value="Flask Web Server for IDE" />
+90-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:74:17-57
+91        </service>
+92
+93        <!-- FileProvider for APK installation -->
+94        <provider
+95            android:name="androidx.core.content.FileProvider"
+95-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:79:13-62
+96            android:authorities="com.ctz168.phoneide.fileprovider"
+96-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:80:13-64
+97            android:exported="false"
+97-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:81:13-37
+98            android:grantUriPermissions="true" >
+98-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:82:13-47
+99            <meta-data
+99-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:83:13-85:54
+100                android:name="android.support.FILE_PROVIDER_PATHS"
+100-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:84:17-67
+101                android:resource="@xml/file_paths" />
+101-->/home/z/my-project/phoneide/android/app/src/main/AndroidManifest.xml:85:17-51
+102        </provider>
+103        <provider
+103-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:24:9-32:20
+104            android:name="androidx.startup.InitializationProvider"
+104-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:25:13-67
+105            android:authorities="com.ctz168.phoneide.androidx-startup"
+105-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:26:13-68
+106            android:exported="false" >
+106-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:27:13-37
+107            <meta-data
+107-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:29:13-31:52
+108                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+108-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:30:17-75
+109                android:value="androidx.startup" />
+109-->[androidx.emoji2:emoji2:1.2.0] /home/z/.gradle/caches/transforms-3/02cd27b71a63fe8d8a334f45c7589eb3/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:31:17-49
+110            <meta-data
+110-->[androidx.lifecycle:lifecycle-process:2.6.1] /home/z/.gradle/caches/transforms-3/5e6c0c4e4fbbbd7eee4673f1912b57c7/transformed/jetified-lifecycle-process-2.6.1/AndroidManifest.xml:29:13-31:52
+111                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+111-->[androidx.lifecycle:lifecycle-process:2.6.1] /home/z/.gradle/caches/transforms-3/5e6c0c4e4fbbbd7eee4673f1912b57c7/transformed/jetified-lifecycle-process-2.6.1/AndroidManifest.xml:30:17-78
+112                android:value="androidx.startup" />
+112-->[androidx.lifecycle:lifecycle-process:2.6.1] /home/z/.gradle/caches/transforms-3/5e6c0c4e4fbbbd7eee4673f1912b57c7/transformed/jetified-lifecycle-process-2.6.1/AndroidManifest.xml:31:17-49
+113            <meta-data
+113-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:29:13-31:52
+114                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+114-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:30:17-85
+115                android:value="androidx.startup" />
+115-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:31:17-49
+116        </provider>
+117
+118        <receiver
+118-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:34:9-52:20
+119            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+119-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:35:13-76
+120            android:directBootAware="false"
+120-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:36:13-44
+121            android:enabled="true"
+121-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:37:13-35
+122            android:exported="true"
+122-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:38:13-36
+123            android:permission="android.permission.DUMP" >
+123-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:39:13-57
+124            <intent-filter>
+124-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:40:13-42:29
+125                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+125-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:41:17-91
+125-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:41:25-88
+126            </intent-filter>
+127            <intent-filter>
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:43:13-45:29
+128                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+128-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:44:17-85
+128-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:44:25-82
+129            </intent-filter>
+130            <intent-filter>
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:46:13-48:29
+131                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+131-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:47:17-88
+131-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:47:25-85
+132            </intent-filter>
+133            <intent-filter>
+133-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:49:13-51:29
+134                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:50:17-95
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/z/.gradle/caches/transforms-3/c7519d1c9ccb385780d1494c502fb39b/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:50:25-92
+135            </intent-filter>
+136        </receiver>
+137    </application>
+138
+139</manifest>
