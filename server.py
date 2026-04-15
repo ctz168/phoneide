@@ -2590,102 +2590,56 @@ def _fetch_github_json(url, timeout=15):
 @app.route('/api/update/check', methods=['POST'])
 @handle_error
 def update_check():
-    """Check for updates by fetching latest version from GitHub Releases."""
+    """Check for code updates by comparing local git HEAD with remote main branch."""
     try:
-        # 1. Check GitHub Releases for latest APK
-        release_data = _fetch_github_json(GITHUB_RELEASES_URL)
-        latest_tag = release_data.get('tag_name', '')
-        release_name = release_data.get('name', latest_tag)
-        release_body = release_data.get('body', '')
-        release_date = release_data.get('published_at', '')
-        html_url = release_data.get('html_url', '')
-
-        # Extract version number from tag (e.g. "v3.0.29" -> "3.0.29")
-        version = latest_tag.lstrip('v')
-
-        # Compare versions: only update if release version > current version
-        try:
-            from packaging.version import Version
-            current_ver = Version(APP_VERSION)
-            release_ver = Version(version)
-            apk_is_newer = release_ver > current_ver
-        except Exception:
-            # Fallback: string comparison
-            apk_is_newer = version != APP_VERSION
-
-        # Find the release APK asset
-        apk_url = ''
-        apk_size = 0
-        for asset in release_data.get('assets', []):
-            if asset.get('name', '').endswith('.apk') and 'release' in asset.get('name', '').lower():
-                apk_url = asset.get('browser_download_url', '')
-                apk_size = asset.get('size', 0)
-                break
-
-        # If no release APK found, try the first APK asset
-        if not apk_url:
-            for asset in release_data.get('assets', []):
-                if asset.get('name', '').endswith('.apk'):
-                    apk_url = asset.get('browser_download_url', '')
-                    apk_size = asset.get('size', 0)
-                    break
-
-        # 2. Also check code commits
         code_update = False
         remote_sha = ''
         remote_message = ''
         local_sha = ''
         commits_behind = 0
+        remote_date = ''
+        remote_author = ''
+
+        # Fetch latest commit info from GitHub
+        commit_data = _fetch_github_json(f'https://api.github.com/repos/{GITHUB_REPO}/commits/main')
+        remote_sha = commit_data.get('sha', '')
+        remote_message = commit_data.get('commit', {}).get('message', '')
+        remote_date = commit_data.get('commit', {}).get('committer', {}).get('date', '')
+        remote_author = commit_data.get('commit', {}).get('author', {}).get('name', '')
+
+        # Get local HEAD
         try:
-            commit_data = _fetch_github_json(f'https://api.github.com/repos/{GITHUB_REPO}/commits/main')
-            remote_sha = commit_data.get('sha', '')
-            remote_message = commit_data.get('commit', {}).get('message', '')
-
-            try:
-                r = git_cmd('rev-parse HEAD', cwd=SERVER_DIR)
-                if r['ok']:
-                    local_sha = r['stdout'].strip()
-            except Exception:
-                pass
-
-            if local_sha and local_sha != remote_sha:
-                code_update = True
-                try:
-                    r = git_cmd(f'rev-list --count {local_sha}..{remote_sha}', cwd=SERVER_DIR)
-                    if r['ok']:
-                        commits_behind = int(r['stdout'].strip())
-                except Exception:
-                    commits_behind = -1
+            r = git_cmd('rev-parse HEAD', cwd=SERVER_DIR)
+            if r['ok']:
+                local_sha = r['stdout'].strip()
         except Exception:
             pass
 
-        # Check if update available (APK or code)
-        apk_update = bool(apk_url) and apk_is_newer
-        update_available = apk_update or code_update
+        # Compare: if local != remote, there are code updates
+        if local_sha and remote_sha and local_sha != remote_sha:
+            code_update = True
+            try:
+                r = git_cmd(f'rev-list --count {local_sha}..{remote_sha}', cwd=SERVER_DIR)
+                if r['ok']:
+                    commits_behind = int(r['stdout'].strip())
+            except Exception:
+                commits_behind = -1
+        elif not local_sha:
+            # No local git info — assume update needed
+            code_update = True
+            commits_behind = -1
 
         return jsonify({
-            'update_available': update_available,
-            'apk_update': apk_update,
+            'update_available': code_update,
             'code_update': code_update,
             'current_version': APP_VERSION,
-            'new_version': version,
-            'latest_tag': latest_tag,
-            'release_name': release_name,
-            'release_body': release_body,
-            'release_date': release_date,
-            'release_url': html_url,
-            'apk_url': apk_url,
-            'apk_size': apk_size,
-            'apk_size_human': f'{apk_size / 1024 / 1024:.1f}MB' if apk_size > 0 else 'Unknown',
             'local_sha': local_sha[:8] if local_sha else 'unknown',
             'remote_sha': remote_sha[:8] if remote_sha else 'unknown',
             'remote_message': remote_message.split('\n')[0] if remote_message else '',
+            'remote_date': remote_date,
+            'remote_author': remote_author,
             'commits_behind': commits_behind,
         })
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': APP_VERSION})
-        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': APP_VERSION})
     except Exception as e:
         return jsonify({'error': str(e), 'update_available': False, 'current_version': APP_VERSION})
 

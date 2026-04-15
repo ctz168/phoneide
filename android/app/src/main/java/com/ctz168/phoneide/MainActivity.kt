@@ -568,33 +568,38 @@ class MainActivity : AppCompatActivity() {
 
                 val json = JSONObject(responseBody)
                 val updateAvailable = json.optBoolean("update_available", false)
-                val currentVersion = json.optString("current_version", "unknown")
                 val codeUpdate = json.optBoolean("code_update", false)
-                val newVersion = json.optString("new_version", "")
+                val currentVersion = json.optString("current_version", "unknown")
+                val localSha = json.optString("local_sha", "?")
+                val remoteSha = json.optString("remote_sha", "?")
                 val remoteMessage = json.optString("remote_message", "")
+                val remoteAuthor = json.optString("remote_author", "")
+                val remoteDate = json.optString("remote_date", "")
                 val commitsBehind = json.optInt("commits_behind", 0)
 
                 if (!updateAvailable || !codeUpdate) {
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("已是最新版本")
-                        .setMessage("当前代码版本: $currentVersion")
+                        .setTitle("代码已是最新")
+                        .setMessage("当前版本: $currentVersion\n本地 commit: $localSha")
                         .setPositiveButton("确定", null)
                         .show()
                     return@launch
                 }
 
-                // Show update info and confirm
+                // Show code update info and confirm
+                val behindText = if (commitsBehind > 0) "落后 $commitsBehind 个提交" else "有新的提交"
                 MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("发现代码更新")
                     .setMessage(
-                        "远程版本: $newVersion\n" +
-                        "本地版本: $currentVersion\n" +
-                        "落后 $commitsBehind 个提交\n\n" +
-                        "最新提交:\n$remoteMessage\n\n" +
-                        "点击更新将执行 git pull 并重启服务器"
+                        "当前版本: $currentVersion\n" +
+                        "$behindText\n\n" +
+                        "远程最新:\n$remoteMessage\n" +
+                        "作者: $remoteAuthor\n" +
+                        (if (remoteDate.isNotEmpty()) "时间: $remoteDate" else "") +
+                        "\n\n点击更新将执行 git pull 并重启服务器"
                     )
                     .setPositiveButton("立即更新") { _, _ ->
-                        applyCodeUpdate(newVersion)
+                        applyCodeUpdate(currentVersion)
                     }
                     .setNegativeButton("稍后", null)
                     .show()
