@@ -32,7 +32,7 @@ CORS(app)
 WORKSPACE = os.environ.get('PHONEIDE_WORKSPACE', os.path.expanduser('~/phoneide_workspace'))
 PORT = int(os.environ.get('PHONEIDE_PORT', 1239))
 HOST = os.environ.get('PHONEIDE_HOST', '0.0.0.0')
-APP_VERSION = os.environ.get('PHONEIDE_VERSION', '3.0.37')
+APP_VERSION = os.environ.get('PHONEIDE_VERSION', '3.0.39')
 
 # Config file
 CONFIG_DIR = os.path.expanduser('~/.phoneide')
