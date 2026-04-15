@@ -54,7 +54,7 @@ def load_config():
         'workspace': WORKSPACE,
         'venv_path': '',
         'compiler': 'python3',
-        'theme': 'dark',
+        'theme': 'claude',
         'font_size': 14,
         'tab_size': 4,
         'show_line_numbers': True,
@@ -429,7 +429,10 @@ def save_file():
 def create_file():
     data = request.json
     path = data.get('path', '')
+    # Support both 'is_dir' (boolean) and 'type' (string 'file'|'directory')
     is_dir = data.get('is_dir', False)
+    if not is_dir and data.get('type') == 'directory':
+        is_dir = True
     config = load_config()
     base = config.get('workspace', WORKSPACE)
 

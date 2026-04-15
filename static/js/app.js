@@ -59,24 +59,88 @@ const AppManager = (() => {
         });
     }
 
-    function showPromptDialog(title, placeholder = '', defaultValue = '') {
-        return showDialog(title,
+    function showPromptDialog(title, placeholder = '', defaultValue = '', callback) {
+        const promise = showDialog(title,
             `<input type="text" placeholder="${escapeHTML(placeholder)}" value="${escapeHTML(defaultValue)}" autocomplete="off">`,
             [
                 { text: '取消', value: 'cancel', class: 'btn-cancel' },
                 { text: '确定', value: 'ok', class: 'btn-confirm' },
             ]
         );
+        // Support callback pattern for FileManager/GitManager
+        if (typeof callback === 'function') {
+            promise.then(result => {
+                callback(result.confirmed ? (result.value || '') : null);
+            });
+        }
+        return promise;
     }
 
-    function showConfirmDialog(title, message) {
-        return showDialog(title,
+    function showConfirmDialog(title, message, callback) {
+        const promise = showDialog(title,
             `<p style="color:var(--text-secondary);font-size:13px;line-height:1.5;">${escapeHTML(message)}</p>`,
             [
                 { text: '取消', value: 'cancel', class: 'btn-cancel' },
                 { text: '确定', value: 'ok', class: 'btn-confirm' },
             ]
         );
+        // Support callback pattern for FileManager/GitManager
+        if (typeof callback === 'function') {
+            promise.then(result => {
+                callback(result.confirmed);
+            });
+        }
+        return promise;
+    }
+
+    /**
+     * Choice dialog - show a list of options for user to select
+     * Supports callback pattern: showChoiceDialog(title, label, options, resolve)
+     */
+    function showChoiceDialog(title, label, options, callback) {
+        const promise = new Promise((resolve) => {
+            const overlay = document.getElementById('dialog-overlay');
+            const dialogTitle = document.getElementById('dialog-title');
+            const dialogBody = document.getElementById('dialog-body');
+            const dialogButtons = document.getElementById('dialog-buttons');
+
+            dialogTitle.textContent = title;
+            let html = `<p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">${escapeHTML(label)}</p>`;
+            options.forEach(opt => {
+                const val = (opt.value !== undefined) ? opt.value : opt;
+                const lbl = opt.label || opt.value || opt;
+                html += `<button class="choice-option" data-value="${escapeAttr(String(val))}" style="display:block;width:100%;padding:10px 12px;margin:4px 0;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;text-align:left;cursor:pointer;font-family:var(--font-mono);">${escapeHTML(String(lbl))}</button>`;
+            });
+            dialogBody.innerHTML = html;
+            dialogButtons.innerHTML = '';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = '取消';
+            cancelBtn.className = 'btn-cancel';
+            cancelBtn.onclick = () => { overlay.classList.add('hidden'); resolve(null); };
+            dialogButtons.appendChild(cancelBtn);
+
+            overlay.classList.remove('hidden');
+
+            // Bind choice clicks
+            dialogBody.querySelectorAll('.choice-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const chosen = btn.dataset.value;
+                    overlay.classList.add('hidden');
+                    resolve(chosen);
+                });
+                btn.addEventListener('touchstart', () => { btn.style.background = 'var(--bg-hover)'; }, { passive: true });
+                btn.addEventListener('touchend', () => { btn.style.background = 'var(--bg-surface)'; }, { passive: true });
+            });
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) { overlay.classList.add('hidden'); resolve(null); }
+            };
+        });
+        // Support callback pattern for GitManager
+        if (typeof callback === 'function') {
+            promise.then(value => callback(value));
+        }
+        return promise;
     }
 
     function showInputDialog(title, fields) {
@@ -114,6 +178,7 @@ const AppManager = (() => {
 
     window.showPromptDialog = showPromptDialog;
     window.showConfirmDialog = showConfirmDialog;
+    window.showChoiceDialog = showChoiceDialog;
     window.showInputDialog = showInputDialog;
     window.showDialog = showDialog;
 
@@ -410,6 +475,54 @@ const AppManager = (() => {
         });
     }
 
+    // ── File Panel Toolbar Buttons ──
+    function initFileToolbar() {
+        // Open Folder button
+        const openFolderBtn = document.getElementById('btn-open-folder');
+        if (openFolderBtn) {
+            openFolderBtn.addEventListener('click', async () => {
+                const result = await showPromptDialog('打开文件夹', '输入文件夹路径:', FileManager ? FileManager.currentPath : '/workspace');
+                if (result) {
+                    try {
+                        const resp = await fetch('/api/files/open_folder', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path: result })
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            throw new Error(err.error || resp.statusText);
+                        }
+                        const data = await resp.json();
+                        if (data.workspace) {
+                            document.getElementById('workspace-path').value = data.workspace;
+                            if (window.FileManager) await FileManager.loadFileList('');
+                            showToast('工作区已切换', 'success');
+                        }
+                    } catch (err) {
+                        showToast('打开文件夹失败: ' + err.message, 'error');
+                    }
+                }
+            });
+        }
+
+        // New File button
+        const newFileBtn = document.getElementById('btn-new-file');
+        if (newFileBtn) {
+            newFileBtn.addEventListener('click', () => {
+                if (window.FileManager) FileManager.createFile();
+            });
+        }
+
+        // New Folder button
+        const newFolderBtn = document.getElementById('btn-new-folder');
+        if (newFolderBtn) {
+            newFolderBtn.addEventListener('click', () => {
+                if (window.FileManager) FileManager.createFolder();
+            });
+        }
+    }
+
     // ── Auto Save ──
     function initAutoSave() {
         let saveTimer = null;
@@ -444,10 +557,10 @@ const AppManager = (() => {
     }
 
     // ── Theme Management ──
-    let currentTheme = 'dark';
+    let currentTheme = 'claude';
     const themes = [
-        { id: 'dark', name: 'Dark (Dracula)', color: '#1e1e2e' },
         { id: 'claude', name: 'Claude (Warm)', color: '#FAF9F6' },
+        { id: 'dark', name: 'Dark (Dracula)', color: '#1e1e2e' },
     ];
 
     function initTheme() {
@@ -1003,6 +1116,7 @@ const AppManager = (() => {
         initBottomPanel();
         initEditorToolbar();
         initToolbar();
+        initFileToolbar();
         initAutoSave();
         initResize();
         initMobileFixes();
@@ -1040,8 +1154,10 @@ const AppManager = (() => {
             // Load chat history
             if (window.ChatManager) await ChatManager.loadHistory();
 
-            // Load venv info
-            if (window.TerminalManager) await TerminalManager.loadVenvInfo();
+            // Load venv info (if available)
+            if (window.TerminalManager && typeof TerminalManager.loadVenvInfo === 'function') {
+                await TerminalManager.loadVenvInfo();
+            }
 
             showToast('PhoneIDE 就绪', 'success', 1500);
             console.log('[PhoneIDE] Ready!');
