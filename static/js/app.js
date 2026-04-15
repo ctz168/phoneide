@@ -840,29 +840,45 @@ const AppManager = (() => {
 
             // Show current version
             if (versionEl) {
-                versionEl.textContent = 'Current version: ' + (data.current_version || data.version || 'unknown');
+                versionEl.textContent = 'Current version: ' + (data.current_version || 'unknown');
             }
 
             if (data.update_available) {
                 // Update available
-                if (statusEl) statusEl.textContent = 'Update available!';
-
                 let info = '';
-                if (data.new_version) info += 'New version: ' + data.new_version + '\n';
-                if (data.commit) info += 'Commit: ' + data.commit + '\n';
-                if (data.commit_message) info += 'Message: ' + data.commit_message + '\n';
-                if (data.commit_date) info += 'Date: ' + data.commit_date + '\n';
-                if (data.changelog) info += '\n' + data.changelog + '\n';
-
+                if (data.apk_update) {
+                    info += 'APK Update Available!\n';
+                    info += 'New version: ' + (data.new_version || data.latest_tag || 'unknown') + '\n';
+                    info += 'APK size: ' + (data.apk_size_human || 'unknown') + '\n';
+                    if (data.release_body) info += '\n' + data.release_body + '\n';
+                    // Show "Update Now" button for APK install
+                    if (applyBtn) {
+                        applyBtn.textContent = 'Download & Install APK';
+                        applyBtn.classList.remove('hidden');
+                        applyBtn.dataset.apkUrl = data.apk_url || '';
+                        applyBtn.dataset.version = data.new_version || data.latest_tag || '';
+                    }
+                } else if (data.code_update) {
+                    info += 'Code Update Available\n';
+                    info += 'Commits behind: ' + (data.commits_behind || '?') + '\n';
+                    if (data.remote_message) info += 'Latest: ' + data.remote_message + '\n';
+                    // Show "Update Now" button for code pull
+                    if (applyBtn) {
+                        applyBtn.textContent = 'Pull & Restart Server';
+                        applyBtn.classList.remove('hidden');
+                        applyBtn.dataset.apkUrl = '';
+                        applyBtn.dataset.version = '';
+                    }
+                }
+                if (statusEl) statusEl.textContent = 'Update available!';
                 if (infoEl && info) {
                     infoEl.textContent = info;
                     infoEl.classList.remove('hidden');
                 }
-                if (applyBtn) applyBtn.classList.remove('hidden');
             } else {
                 if (statusEl) statusEl.textContent = 'You are up to date!';
                 if (versionEl) {
-                    versionEl.textContent = 'Current version: ' + (data.current_version || data.version || 'latest');
+                    versionEl.textContent = 'Current version: ' + (data.current_version || data.latest_tag || 'latest');
                 }
             }
         } catch (err) {
@@ -874,7 +890,7 @@ const AppManager = (() => {
     }
 
     /**
-     * Apply the pending update via API
+     * Apply the pending update via API or trigger APK download
      */
     async function applyUpdate() {
         const statusEl = document.getElementById('update-status');
@@ -882,11 +898,34 @@ const AppManager = (() => {
         const checkBtn = document.getElementById('update-check-btn');
 
         if (!statusEl) return;
+        if (!applyBtn) return;
 
+        const apkUrl = applyBtn.dataset.apkUrl;
+        const version = applyBtn.dataset.version;
+
+        // If APK URL is available, trigger native APK download and install
+        if (apkUrl && version && typeof window.AndroidBridge !== 'undefined') {
+            if (applyBtn) applyBtn.disabled = true;
+            if (checkBtn) checkBtn.disabled = true;
+
+            try {
+                statusEl.textContent = 'Triggering APK download...';
+                window.AndroidBridge.downloadAndInstallApk(apkUrl, version);
+                statusEl.textContent = 'APK download started. Follow the installation prompt.';
+            } catch (err) {
+                statusEl.textContent = 'Error: ' + err.message;
+            } finally {
+                if (applyBtn) applyBtn.disabled = false;
+                if (checkBtn) checkBtn.disabled = false;
+            }
+            return;
+        }
+
+        // Fallback: server-side git pull + restart (for code-only updates)
         if (applyBtn) applyBtn.disabled = true;
         if (checkBtn) checkBtn.disabled = true;
 
-        statusEl.innerHTML = 'Updating...\n<div class="update-progress-bar"><div class="update-progress-fill" id="update-progress"></div></div>';
+        statusEl.innerHTML = 'Updating server...\n<div class="update-progress-bar"><div class="update-progress-fill" id="update-progress"></div></div>';
 
         const progressEl = document.getElementById('update-progress');
 
@@ -900,7 +939,7 @@ const AppManager = (() => {
             const data = await resp.json();
 
             if (progressEl) progressEl.style.width = '100%';
-            statusEl.innerHTML = '✅ Update applied! The page will reload in a few seconds...';
+            statusEl.innerHTML = 'Update applied! The page will reload in a few seconds...';
 
             showToast('Update applied, reloading...', 'success', 3000);
 

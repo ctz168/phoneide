@@ -2,6 +2,9 @@ package com.ctz168.phoneide
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -9,6 +12,8 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
 import android.view.Menu
@@ -16,6 +21,7 @@ import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
 import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -24,10 +30,12 @@ import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -35,6 +43,8 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.SocketTimeoutException
@@ -161,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         btnUpdate.setOnClickListener { handleCheckUpdate() }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private fun setupWebView() {
         webView.settings.apply {
             javaScriptEnabled = true
@@ -222,6 +232,162 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 // Could update progress bar here
             }
+        }
+
+        // Add JavascriptInterface for APK auto-update
+        webView.addJavascriptInterface(UpdateBridge(), "AndroidBridge")
+    }
+
+    // ========================
+    // APK Auto-Update via JS Bridge
+    // ========================
+
+    inner class UpdateBridge {
+        @JavascriptInterface
+        fun downloadAndInstallApk(apkUrl: String, version: String) {
+            Log.d(TAG, "Download APK requested: $apkUrl (v$version)")
+            scope.launch {
+                downloadAndInstallApkInternal(apkUrl, version)
+            }
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private suspend fun downloadAndInstallApkInternal(apkUrl: String, version: String) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setTitle("Downloading Update v$version")
+            .setMessage("Downloading APK, please wait...")
+            .setCancelable(false)
+            .setView(TextView(this).apply {
+                text = "Preparing download..."
+                setPadding(48, 0, 48, 0)
+                textSize = 14f
+            })
+            .create()
+
+        withContext(Dispatchers.Main) {
+            progressDialog.show()
+            // Make the dialog wider
+            progressDialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        try {
+            val outputFile = File(externalCacheDir, "phoneide-${version}.apk")
+
+            // Download APK in background
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder().url(apkUrl).build()
+                    val response = updateHttpClient.newCall(request).execute()
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "APK download failed: HTTP ${response.code}")
+                        false
+                    } else {
+                        val body = response.body ?: return@withContext false
+                        val totalBytes = body.contentLength()
+                        val inputStream = body.byteStream()
+
+                        var bytesRead = 0L
+                        val buffer = ByteArray(8192)
+                        val outputStream = FileOutputStream(outputFile)
+
+                        inputStream.use { input ->
+                            outputStream.use { output ->
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    bytesRead += read
+
+                                    // Update progress every 500KB
+                                    if (bytesRead % (500 * 1024) < 8192L) {
+                                        val progress = if (totalBytes > 0) {
+                                            "${(bytesRead * 100 / totalBytes)}% (${bytesRead / 1024 / 1024}MB / ${totalBytes / 1024 / 1024}MB)"
+                                        } else {
+                                            "${bytesRead / 1024 / 1024}MB downloaded"
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            if (progressDialog.isShowing) {
+                                                progressDialog.findViewById<TextView>(android.R.id.message)?.text = progress
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Log.d(TAG, "APK downloaded: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
+                        true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "APK download error", e)
+                    false
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                progressDialog.dismiss()
+            }
+
+            if (!success) {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Download Failed")
+                    .setMessage("Failed to download the update. Please check your network connection and try again.")
+                    .setPositiveButton("OK", null)
+                    .show()
+                return
+            }
+
+            // Install APK
+            installApk(outputFile)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "APK update failed", e)
+            withContext(Dispatchers.Main) {
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Update Failed")
+                    .setMessage("Error: ${e.message}")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }
+
+    @SuppressLint("QueryablePermissions")
+    private fun installApk(apkFile: File) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                apkFile
+            )
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            // Check if can resolve
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            } else {
+                // Fallback: try without FileProvider
+                val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.fromFile(apkFile), "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(fallbackIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to install APK", e)
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Install Failed")
+                .setMessage("Could not install the update: ${e.message}")
+                .setPositiveButton("OK", null)
+                .show()
         }
     }
 

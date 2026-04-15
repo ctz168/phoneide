@@ -2569,53 +2569,111 @@ def server_logs_stream():
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 # ==================== IDE Update APIs ====================
+
+# GitHub repo config for releases
+GITHUB_REPO = 'ctz168/phoneide'
+GITHUB_RELEASES_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
+
+def _fetch_github_json(url, timeout=15):
+    """Helper to fetch JSON from GitHub API."""
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'PhoneIDE-Server',
+        'Accept': 'application/vnd.github.v3+json',
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
 @app.route('/api/update/check', methods=['POST'])
 @handle_error
 def update_check():
-    """Check for updates by fetching latest version from GitHub."""
+    """Check for updates by fetching latest version from GitHub Releases."""
     try:
-        url = 'https://api.github.com/repos/ctz168/phoneide/commits/main'
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'PhoneIDE-Server',
-            'Accept': 'application/vnd.github.v3+json',
-        })
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
-        remote_sha = data.get('sha', '')
-        remote_date = data.get('commit', {}).get('committer', {}).get('date', '')
-        remote_message = data.get('commit', {}).get('message', '')
+        # 1. Check GitHub Releases for latest APK
+        release_data = _fetch_github_json(GITHUB_RELEASES_URL)
+        latest_tag = release_data.get('tag_name', '')
+        release_name = release_data.get('name', latest_tag)
+        release_body = release_data.get('body', '')
+        release_date = release_data.get('published_at', '')
+        html_url = release_data.get('html_url', '')
 
-        # Get local HEAD commit
+        # Extract version number from tag (e.g. "v3.0.29" -> "3.0.29")
+        version = latest_tag.lstrip('v')
+
+        # Find the release APK asset
+        apk_url = ''
+        apk_size = 0
+        for asset in release_data.get('assets', []):
+            if asset.get('name', '').endswith('.apk') and 'release' in asset.get('name', '').lower():
+                apk_url = asset.get('browser_download_url', '')
+                apk_size = asset.get('size', 0)
+                break
+
+        # If no release APK found, try the first APK asset
+        if not apk_url:
+            for asset in release_data.get('assets', []):
+                if asset.get('name', '').endswith('.apk'):
+                    apk_url = asset.get('browser_download_url', '')
+                    apk_size = asset.get('size', 0)
+                    break
+
+        # 2. Also check code commits
+        code_update = False
+        remote_sha = ''
+        remote_message = ''
         local_sha = ''
+        commits_behind = 0
         try:
-            r = git_cmd('rev-parse HEAD', cwd=SERVER_DIR)
-            if r['ok']:
-                local_sha = r['stdout'].strip()
+            commit_data = _fetch_github_json(f'https://api.github.com/repos/{GITHUB_REPO}/commits/main')
+            remote_sha = commit_data.get('sha', '')
+            remote_message = commit_data.get('commit', {}).get('message', '')
+
+            try:
+                r = git_cmd('rev-parse HEAD', cwd=SERVER_DIR)
+                if r['ok']:
+                    local_sha = r['stdout'].strip()
+            except Exception:
+                pass
+
+            if local_sha and local_sha != remote_sha:
+                code_update = True
+                try:
+                    r = git_cmd(f'rev-list --count {local_sha}..{remote_sha}', cwd=SERVER_DIR)
+                    if r['ok']:
+                        commits_behind = int(r['stdout'].strip())
+                except Exception:
+                    commits_behind = -1
         except Exception:
             pass
 
-        is_up_to_date = local_sha == remote_sha
-        behind = 0
-        if local_sha and not is_up_to_date:
-            try:
-                r = git_cmd(f'rev-list --count {local_sha}..{remote_sha}', cwd=SERVER_DIR)
-                if r['ok']:
-                    behind = int(r['stdout'].strip())
-            except Exception:
-                behind = -1  # unknown
+        # Check if update available (APK or code)
+        apk_update = bool(apk_url)
+        update_available = apk_update or code_update
 
         return jsonify({
-            'up_to_date': is_up_to_date,
+            'update_available': update_available,
+            'apk_update': apk_update,
+            'code_update': code_update,
+            'current_version': '3.0.1',
+            'new_version': version,
+            'latest_tag': latest_tag,
+            'release_name': release_name,
+            'release_body': release_body,
+            'release_date': release_date,
+            'release_url': html_url,
+            'apk_url': apk_url,
+            'apk_size': apk_size,
+            'apk_size_human': f'{apk_size / 1024 / 1024:.1f}MB' if apk_size > 0 else 'Unknown',
             'local_sha': local_sha[:8] if local_sha else 'unknown',
             'remote_sha': remote_sha[:8] if remote_sha else 'unknown',
-            'remote_date': remote_date,
             'remote_message': remote_message.split('\n')[0] if remote_message else '',
-            'commits_behind': behind,
+            'commits_behind': commits_behind,
         })
     except urllib.error.HTTPError as e:
-        return jsonify({'error': f'GitHub API error: {e.code}', 'up_to_date': True})
+        if e.code == 404:
+            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': '3.0.0'})
+        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': '3.0.0'})
     except Exception as e:
-        return jsonify({'error': str(e), 'up_to_date': True})
+        return jsonify({'error': str(e), 'update_available': False, 'current_version': '3.0.0'})
 
 @app.route('/api/update/apply', methods=['POST'])
 @handle_error
