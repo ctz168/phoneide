@@ -793,51 +793,90 @@ class MainActivity : AppCompatActivity() {
         btnUpdate.isEnabled = false
         val progressDialog = AlertDialog.Builder(this)
             .setTitle("正在更新代码")
-            .setMessage("正在拉取最新代码并重启服务器...\n\n请稍候")
+            .setMessage("正在停止服务并拉取最新代码...\n\n请稍候")
             .setCancelable(false)
             .create()
         progressDialog.show()
 
         scope.launch {
             try {
-                val success = withContext(Dispatchers.IO) {
-                    postToServer("/api/update/apply", useUpdateClient = true)
+                // Step 1: Stop server service
+                withContext(Dispatchers.Main) {
+                    updateStatusIndicator(false)
+                    statusLabel.text = getString(R.string.server_restarting)
                 }
+                withContext(Dispatchers.IO) {
+                    ServerService.stop(this@MainActivity)
+                    // Wait for server process to fully stop
+                    Thread.sleep(2000)
+                }
+
+                // Step 2: Run git fetch + reset directly via proot (server is stopped, so no HTTP)
+                val updateOutput = withContext(Dispatchers.IO) {
+                    val pm = ProcessManager(this@MainActivity)
+                    val output = pm.runInProotSync(
+                        "cd /root/phoneide && " +
+                        "git fetch origin main 2>&1 && " +
+                        "git reset --hard origin/main 2>&1 && " +
+                        "echo 'UPDATE_SUCCESS'",
+                        120
+                    )
+                    output
+                }
+
+                val success = updateOutput.contains("UPDATE_SUCCESS")
+
                 withContext(Dispatchers.Main) { progressDialog.dismiss() }
 
                 if (success) {
+                    // Step 3: Restart server service
                     withContext(Dispatchers.Main) {
-                        updateStatusIndicator(false)
-                        statusLabel.text = getString(R.string.server_restarting)
-                        stopServerService()
                         startServerService()
-                        showLoading("服务器重启中...")
+                        showLoading("服务器启动中...")
+                    }
 
-                        scope.launch {
-                            var attempts = 0
-                            while (attempts < 30 && isActive) {
-                                delay(HEALTH_POLL_INTERVAL)
-                                val isUp = withContext(Dispatchers.IO) { checkServerConnection() }
-                                if (isUp) break
-                                attempts++
-                            }
-                            hideAllOverlays()
-                            loadIDE()
-                            updateStatusIndicator(true)
-                            Toast.makeText(this@MainActivity, "代码已更新到 $version", Toast.LENGTH_LONG).show()
+                    // Step 4: Wait for server to be ready, then reload IDE
+                    scope.launch {
+                        var attempts = 0
+                        while (attempts < 30 && isActive) {
+                            delay(HEALTH_POLL_INTERVAL)
+                            val isUp = withContext(Dispatchers.IO) { checkServerConnection() }
+                            if (isUp) break
+                            attempts++
                         }
+                        hideAllOverlays()
+                        loadIDE()
+                        updateStatusIndicator(true)
+                        Toast.makeText(this@MainActivity, "代码已更新到 $version", Toast.LENGTH_LONG).show()
                     }
                 } else {
-                    MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("更新失败")
-                        .setMessage("无法拉取代码，请检查网络后重试")
-                        .setPositiveButton("确定", null)
-                        .show()
+                    // Update failed — try to start server anyway
+                    withContext(Dispatchers.Main) {
+                        startServerService()
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle("更新失败")
+                            .setMessage("git 更新出错，请检查网络后重试\n\n输出:\n$updateOutput")
+                            .setPositiveButton("确定", null)
+                            .show()
+                    }
+                    scope.launch {
+                        var attempts = 0
+                        while (attempts < 15 && isActive) {
+                            delay(HEALTH_POLL_INTERVAL)
+                            val isUp = withContext(Dispatchers.IO) { checkServerConnection() }
+                            if (isUp) break
+                            attempts++
+                        }
+                        hideAllOverlays()
+                        loadIDE()
+                        updateStatusIndicator(true)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Update apply failed", e)
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
+                    startServerService()
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle("更新失败")
                         .setMessage("错误: ${e.message}")

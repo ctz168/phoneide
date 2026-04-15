@@ -208,7 +208,7 @@ def update_check():
 @bp.route('/api/update/apply', methods=['POST'])
 @handle_error
 def update_apply():
-    """Pull latest code from GitHub and restart server."""
+    """Pull latest code from GitHub. Caller (Android) handles server restart."""
     try:
         # Check if SERVER_DIR is a git repo
         if not os.path.exists(os.path.join(SERVER_DIR, '.git')):
@@ -226,34 +226,9 @@ def update_apply():
 
         log_write(f'[UPDATE] Updated to latest: {reset_result["stdout"][:200]}')
 
-        # Restart server
-        marker = os.path.join(CONFIG_DIR, 'restart_marker.json')
-        with open(marker, 'w') as f:
-            json.dump({'pid': os.getpid(), 'reason': 'update', 'time': datetime.now().isoformat()}, f)
-
-        env = os.environ.copy()
-        env['PHONEIDE_WORKSPACE'] = load_config().get('workspace', WORKSPACE)
-        env['PHONEIDE_PORT'] = str(PORT)
-        env['PHONEIDE_HOST'] = HOST
-
-        server_script = os.path.join(SERVER_DIR, 'server.py')
-        subprocess.Popen(
-            [sys.executable, server_script],
-            env=env,
-            stdout=open(os.path.join(CONFIG_DIR, 'server.log'), 'a'),
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-
-        def _exit():
-            time.sleep(0.5)
-            os._exit(0)
-        threading.Thread(target=_exit, daemon=True).start()
-
         return jsonify({
             'ok': True,
-            'message': 'Update applied, server restarting...',
-            'pull_output': reset_result['stdout'][:500],
+            'message': 'Code updated. Server will be restarted by the app.',
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
