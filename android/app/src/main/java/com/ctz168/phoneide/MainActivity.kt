@@ -742,7 +742,7 @@ class MainActivity : AppCompatActivity() {
                         .setTitle(getString(R.string.update_available))
                         .setMessage(message)
                         .setPositiveButton("Download & Install") { _, _ ->
-                            downloadAndInstallApkInternal(apkUrl, newVersion)
+                            scope.launch { downloadAndInstallApkInternal(apkUrl, newVersion) }
                         }
                         .setNegativeButton("Later", null)
                         .show()
