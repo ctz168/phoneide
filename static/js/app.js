@@ -727,6 +727,10 @@ const AppManager = (() => {
         if (updateApplyBtn) {
             updateApplyBtn.addEventListener('click', () => applyUpdate());
         }
+        const updateDiagnoseBtn = document.getElementById('update-diagnose-btn');
+        if (updateDiagnoseBtn) {
+            updateDiagnoseBtn.addEventListener('click', () => diagnoseUpdate());
+        }
         if (updateCloseBtn) {
             updateCloseBtn.addEventListener('click', () => {
                 document.getElementById('update-dialog-overlay').classList.add('hidden');
@@ -1111,25 +1115,42 @@ const AppManager = (() => {
 
         try {
             const resp = await fetch('/api/update/apply', { method: 'POST' });
+            const respText = await resp.text().catch(() => 'Unknown error');
+
             if (!resp.ok) {
-                const errText = await resp.text().catch(() => 'Unknown error');
-                // Try to extract error message from JSON
+                // Parse error JSON and show full details
+                let errMsg = respText;
+                let diagInfo = '';
                 try {
-                    const errJson = JSON.parse(errText);
-                    throw new Error(errJson.error || errText);
+                    const errJson = JSON.parse(respText);
+                    errMsg = errJson.error || respText;
+                    // Show diagnostics if available
+                    if (errJson.diagnostics) {
+                        const d = errJson.diagnostics;
+                        diagInfo = '\n\n── 诊断信息 ──';
+                        if (d.SERVER_DIR) diagInfo += `\n目录: ${d.SERVER_DIR}`;
+                        if (d.write_test !== undefined) diagInfo += `\n写权限: ${d.write_test ? '✅' : '❌ ' + (d.write_error || '')}`;
+                        if (d.write_ok_after_fix !== undefined) diagInfo += `\n修复后写权限: ${d.write_ok_after_fix ? '✅' : '❌'}`;
+                        if (d.tmp_writable !== undefined) diagInfo += `\n/tmp写权限: ${d.tmp_writable ? '✅' : '❌'}`;
+                        if (d.network_ok !== undefined) diagInfo += `\n网络: ${d.network_ok ? '✅' : '❌ ' + (d.network_error || '')}`;
+                        if (d.disk_free_mb !== undefined) diagInfo += `\n剩余空间: ${d.disk_free_mb}MB`;
+                    }
+                    if (errJson.traceback) {
+                        diagInfo += '\n\n── 完整错误 ──\n' + errJson.traceback;
+                    }
                 } catch (parseErr) {
-                    if (parseErr.message !== errText) throw parseErr;
-                    throw new Error(errText);
+                    // not JSON, use raw text
                 }
+                throw new Error(errMsg + diagInfo);
             }
 
-            const data = await resp.json();
-            const method = data.method || 'unknown';
+            const data = JSON.parse(respText);
+            const method = data.method || 'zip';
 
             if (progressEl) progressEl.style.width = '100%';
-            statusEl.innerHTML = `✅ Update applied (${method})! The page will reload in a few seconds...`;
+            statusEl.innerHTML = `✅ 更新完成 (${method})! 页面将在几秒后刷新...`;
 
-            showToast(`Update applied via ${method}, reloading...`, 'success', 3000);
+            showToast(`更新完成, 正在重启...`, 'success', 3000);
 
             // Reload page after delay
             setTimeout(() => {
@@ -1137,12 +1158,89 @@ const AppManager = (() => {
             }, 3000);
 
         } catch (err) {
-            statusEl.textContent = '❌ Update failed: ' + err.message;
+            statusEl.textContent = '❌ ' + err.message;
+            statusEl.style.whiteSpace = 'pre-wrap';
+            statusEl.style.wordBreak = 'break-all';
+            statusEl.style.fontSize = '12px';
+            statusEl.style.maxHeight = '300px';
+            statusEl.style.overflowY = 'auto';
             if (progressEl) progressEl.style.width = '0%';
-            showToast('Update failed: ' + err.message, 'error', 5000);
+            showToast('更新失败', 'error', 5000);
         } finally {
             if (applyBtn) applyBtn.disabled = false;
             if (checkBtn) checkBtn.disabled = false;
+        }
+    }
+
+    // ── Diagnose Update Environment ──
+    async function diagnoseUpdate() {
+        const statusEl = document.getElementById('update-status');
+        if (!statusEl) return;
+
+        statusEl.innerHTML = '正在运行诊断...';
+        statusEl.style.whiteSpace = 'pre-wrap';
+        statusEl.style.fontSize = '11px';
+
+        try {
+            const resp = await fetch('/api/update/diagnose');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+
+            let report = '── 更新诊断报告 ──\n\n';
+            report += `版本: ${data.APP_VERSION || '?'}\n`;
+            report += `进程: PID=${data.pid}, UID=${data.uid}, GID=${data.gid}\n`;
+            report += `工作目录: ${data.cwd}\n`;
+            report += `HOME: ${data.user_home}\n`;
+            report += `临时目录: ${data.tempdir}\n\n`;
+
+            report += `── SERVER_DIR ──\n`;
+            report += `路径: ${data.SERVER_DIR}\n`;
+            report += `存在: ${data.SERVER_DIR_exists ? '✅' : '❌'}\n`;
+            if (data.SERVER_DIR_stat) {
+                const s = data.SERVER_DIR_stat;
+                report += `权限: ${s.mode} (可写:${s.writable ? '✅' : '❌'} 可读:${s.readable ? '✅' : '❌'})\n`;
+            }
+            report += `写文件测试: ${data.SERVER_DIR_write ? '✅' : '❌ ' + (data.SERVER_DIR_write_error || '')}\n`;
+            report += `/tmp写测试: ${data.tmp_write ? '✅' : '❌ ' + (data.tmp_write_error || '')}\n`;
+
+            // Disk
+            report += '\n── 磁盘空间 ──\n';
+            for (const [k, v] of Object.entries(data)) {
+                if (k.startsWith('disk_') && k.endsWith('_free_mb')) {
+                    const path = k.replace('disk_', '').replace('_free_mb', '');
+                    report += `${path}: ${v}MB\n`;
+                }
+            }
+
+            // Network
+            report += '\n── 网络 ──\n';
+            report += `GitHub API: ${data.github_api || '?'}\n`;
+            if (data.github_latest_sha) report += `最新提交: ${data.github_latest_sha} ${data.github_latest_msg || ''}\n`;
+            report += `GitHub ZIP: ${data.github_zip || '?'}\n`;
+            if (data.github_zip_size) report += `ZIP大小: ${data.github_zip_size}\n`;
+
+            // Git
+            report += '\n── Git ──\n';
+            report += `.git目录: ${data.git_dir_exists ? '✅' : '❌'}\n`;
+            if (data.git_remote) report += `远程: ${data.git_remote}\n`;
+            if (data.git_error) report += `错误: ${data.git_error}\n`;
+
+            // Config
+            if (data.config_workspace) report += `\n── 配置 ──\n工作区: ${data.config_workspace}\n`;
+            if (data.config_has_token !== undefined) report += `Token: ${data.config_has_token ? '已配置' : '未配置'}\n`;
+
+            // Server log
+            if (data.server_log_tail && data.server_log_tail.length > 0) {
+                report += '\n── 服务器日志 (最后20行) ──\n';
+                report += data.server_log_tail.join('\n');
+            }
+
+            statusEl.textContent = report;
+            showToast('诊断完成', 'info', 2000);
+
+        } catch (err) {
+            statusEl.textContent = '诊断失败: ' + err.message;
+            showToast('诊断失败', 'error');
         }
     }
 

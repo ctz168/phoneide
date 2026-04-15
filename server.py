@@ -2659,61 +2659,97 @@ def update_check():
 def _download_zip_update():
     """Download latest code as zip from GitHub and extract over SERVER_DIR.
 
-    This method uses urllib (same as update_check which already works) instead
-    of git, to avoid git networking issues inside proot environments.
+    Uses urllib (same as update_check which already works) instead of git,
+    to avoid git networking issues inside proot environments.
+    Returns (copied_count, detail_string).
     """
     # Download zip archive of the main branch
     zip_url = f'https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip'
     _log_write(f'[UPDATE] Downloading zip from {zip_url}')
 
-    req = urllib.request.Request(zip_url, headers={
-        'User-Agent': 'PhoneIDE-Server',
-        'Accept': 'application/octet-stream',
-    })
-    # Add token if available (for private repos / higher rate limit)
-    token = _get_git_token()
-    if token:
-        req.add_header('Authorization', f'token {token}')
+    try:
+        req = urllib.request.Request(zip_url, headers={
+            'User-Agent': 'PhoneIDE-Server',
+            'Accept': 'application/octet-stream',
+        })
+        token = _get_git_token()
+        if token:
+            req.add_header('Authorization', f'token {token}')
 
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        zip_data = resp.read()
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            zip_data = resp.read()
+    except Exception as e:
+        raise RuntimeError(f'下载 zip 失败: {type(e).__name__}: {e}')
 
     if len(zip_data) < 1000:
-        raise RuntimeError(f'Downloaded zip too small ({len(zip_data)} bytes), likely an error')
+        raise RuntimeError(f'下载的 zip 太小 ({len(zip_data)} bytes), 可能是 GitHub 返回了错误页面')
+
+    _log_write(f'[UPDATE] Downloaded {len(zip_data)} bytes')
 
     # Extract zip to a temp directory, then copy files over
-    tmpdir = tempfile.mkdtemp(prefix='phoneide_update_')
-    zip_path = os.path.join(tmpdir, 'update.zip')
-    with open(zip_path, 'wb') as f:
-        f.write(zip_data)
-
+    tmpdir = None
     try:
+        tmpdir = tempfile.mkdtemp(prefix='phoneide_update_')
+        _log_write(f'[UPDATE] Temp dir: {tmpdir}')
+
+        zip_path = os.path.join(tmpdir, 'update.zip')
+        with open(zip_path, 'wb') as f:
+            f.write(zip_data)
+
         with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(tmpdir)
 
         # Find the extracted root folder (github archives create a folder like phoneide-main/)
-        extracted_dirs = [d for d in os.listdir(tmpdir) if os.path.isdir(os.path.join(tmpdir, d)) and d != '__MACOSX']
+        extracted_dirs = [d for d in os.listdir(tmpdir)
+                          if os.path.isdir(os.path.join(tmpdir, d)) and d != '__MACOSX']
         if not extracted_dirs:
-            raise RuntimeError('No extracted directory found in zip')
+            raise RuntimeError(f'zip 解压后未找到目录, 内容: {os.listdir(tmpdir)[:10]}')
         src_dir = os.path.join(tmpdir, extracted_dirs[0])
+        _log_write(f'[UPDATE] Extracted source dir: {src_dir}')
+
+        # Ensure SERVER_DIR is writable before copying
+        os.chmod(SERVER_DIR, 0o755)
 
         # Copy all files from extracted dir to SERVER_DIR, overwriting existing
         copied = 0
+        errors = []
         for item in os.listdir(src_dir):
             s = os.path.join(src_dir, item)
             d = os.path.join(SERVER_DIR, item)
-            if os.path.isdir(s):
-                if os.path.exists(d):
-                    shutil.rmtree(d)
-                shutil.copytree(s, d)
-            else:
-                shutil.copy2(s, d)
-            copied += 1
+            try:
+                if os.path.isdir(s):
+                    if os.path.exists(d):
+                        # Ensure destination is writable before removing
+                        os.chmod(d, 0o755)
+                        for root, dirs, files in os.walk(d):
+                            for dd in dirs:
+                                os.chmod(os.path.join(root, dd), 0o755)
+                            for ff in files:
+                                os.chmod(os.path.join(root, ff), 0o644)
+                        shutil.rmtree(d)
+                    shutil.copytree(s, d)
+                else:
+                    # Ensure parent dir is writable
+                    os.chmod(SERVER_DIR, 0o755)
+                    shutil.copy2(s, d)
+                    os.chmod(d, 0o644)
+                copied += 1
+            except Exception as e:
+                errors.append(f'{item}: {e}')
+                _log_write(f'[UPDATE] Error copying {item}: {e}')
 
-        _log_write(f'[UPDATE] Zip extraction complete, {copied} items copied')
-        return copied
+        _log_write(f'[UPDATE] Zip extraction complete: {copied} copied, {len(errors)} errors')
+        detail = f'下载并解压 {copied} 个文件'
+        if errors:
+            detail += f', {len(errors)} 个错误: {"; ".join(errors[:5])}'
+        return copied, detail
+    except Exception as e:
+        if 'extracted' not in str(e).lower() and 'zip' not in str(e).lower():
+            raise
+        raise
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def _restart_server():
@@ -2747,56 +2783,275 @@ def _restart_server():
 def update_apply():
     """Fetch latest code from GitHub and restart server.
 
-    Strategy: try git pull first (fast, preserves .git), fall back to
-    zip download (uses urllib which is proven to work in proot).
+    Uses zip download as the primary method (urllib works reliably in proot).
+    Git pull is skipped entirely — it has networking issues in proot.
     """
+    import traceback as tb
+    diagnostics = {}
+
     try:
-        # Ensure SERVER_DIR is writable
+        # ── Pre-flight checks ──
+        # 1. Check SERVER_DIR exists and is accessible
+        diagnostics['SERVER_DIR'] = SERVER_DIR
+        diagnostics['SERVER_DIR_exists'] = os.path.exists(SERVER_DIR)
+        diagnostics['SERVER_DIR_isdir'] = os.path.isdir(SERVER_DIR)
+
+        if not os.path.exists(SERVER_DIR):
+            return jsonify({
+                'error': f'SERVER_DIR 不存在: {SERVER_DIR}',
+                'diagnostics': diagnostics,
+            }), 500
+
+        # 2. Check write permission
+        test_file = os.path.join(SERVER_DIR, '.write_test_' + str(os.getpid()))
+        write_ok = False
+        write_error = ''
         try:
-            subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}', shell=True, capture_output=True, timeout=15)
-        except Exception:
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            write_ok = True
+        except Exception as e:
+            write_error = f'{type(e).__name__}: {e}'
+        diagnostics['write_test'] = write_ok
+        diagnostics['write_error'] = write_error
+
+        if not write_ok:
+            # Try chmod to fix
+            chmod_error = ''
+            try:
+                subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}',
+                               shell=True, capture_output=True, text=True, timeout=15)
+                # Retry write test
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    write_ok = True
+                    write_error = 'fixed by chmod'
+                except Exception as e2:
+                    write_error += f'; chmod后仍然失败: {e2}'
+                    diagnostics['write_error'] = write_error
+            except Exception as e:
+                chmod_error = f'{type(e).__name__}: {e}'
+                diagnostics['chmod_error'] = chmod_error
+
+        diagnostics['write_ok_after_fix'] = write_ok
+
+        # 3. Check /tmp write permission
+        tmp_test = os.path.join(tempfile.gettempdir(), '.write_test_' + str(os.getpid()))
+        tmp_ok = False
+        try:
+            with open(tmp_test, 'w') as f:
+                f.write('test')
+            os.remove(tmp_test)
+            tmp_ok = True
+        except Exception as e:
             pass
+        diagnostics['tmp_writable'] = tmp_ok
+        diagnostics['tmp_dir'] = tempfile.gettempdir()
 
-        update_method = ''
-        detail = ''
+        # 4. Check disk space
+        try:
+            stat = os.statvfs(SERVER_DIR)
+            free_mb = (stat.f_bavail * stat.f_frsize) / (1024 * 1024)
+            diagnostics['disk_free_mb'] = round(free_mb, 1)
+        except Exception as e:
+            diagnostics['disk_error'] = str(e)
 
-        # ── Method 1: git pull ──
-        git_dir = os.path.join(SERVER_DIR, '.git')
-        if os.path.exists(git_dir):
-            try:
-                fetch_result = git_cmd('fetch -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=90)
-                if fetch_result['ok']:
-                    reset_result = git_cmd('reset --hard origin/main', cwd=SERVER_DIR, timeout=30)
-                    if reset_result['ok']:
-                        update_method = 'git'
-                        detail = reset_result['stdout'][:300]
-            except Exception as e:
-                _log_write(f'[UPDATE] git pull failed: {e}, falling back to zip')
+        # 5. Check network (quick test)
+        net_ok = False
+        net_error = ''
+        try:
+            req = urllib.request.Request(
+                f'https://api.github.com/repos/{GITHUB_REPO}/commits/main',
+                headers={'User-Agent': 'PhoneIDE-Server'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                net_ok = resp.status == 200
+        except Exception as e:
+            net_error = f'{type(e).__name__}: {e}'
+        diagnostics['network_ok'] = net_ok
+        diagnostics['network_error'] = net_error
 
-        # ── Method 2: zip download (fallback) ──
-        if not update_method:
-            try:
-                copied = _download_zip_update()
-                update_method = 'zip'
-                detail = f'Downloaded and extracted {copied} items via zip'
-            except Exception as e:
-                return jsonify({
-                    'error': f'Update failed (both git and zip methods failed). '
-                             f'Zip error: {e}',
-                    'method': 'none',
-                }), 500
+        if not write_ok:
+            return jsonify({
+                'error': f'SERVER_DIR ({SERVER_DIR}) 没有写权限! {write_error}',
+                'diagnostics': diagnostics,
+            }), 500
 
-        _log_write(f'[UPDATE] Success via {update_method}: {detail}')
+        if not tmp_ok:
+            return jsonify({
+                'error': f'临时目录 ({tempfile.gettempdir()}) 没有写权限!',
+                'diagnostics': diagnostics,
+            }), 500
+
+        # ── Download and apply zip update ──
+        _log_write(f'[UPDATE] Starting zip download update...')
+
+        try:
+            copied, detail = _download_zip_update()
+            update_method = 'zip'
+        except Exception as e:
+            full_traceback = tb.format_exc()
+            _log_write(f'[UPDATE] FAILED: {full_traceback}')
+            return jsonify({
+                'error': f'更新失败: {type(e).__name__}: {e}',
+                'traceback': full_traceback,
+                'diagnostics': diagnostics,
+            }), 500
+
+        _log_write(f'[UPDATE] Success via zip: {detail}')
+
+        # ── Restart server ──
         _restart_server()
 
         return jsonify({
             'ok': True,
-            'message': f'Update applied ({update_method}), server restarting...',
-            'method': update_method,
+            'message': f'更新完成 (zip), 服务器正在重启...',
+            'method': 'zip',
             'detail': detail,
+            'diagnostics': diagnostics,
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        full_traceback = tb.format_exc()
+        return jsonify({
+            'error': f'更新异常: {type(e).__name__}: {e}',
+            'traceback': full_traceback,
+            'diagnostics': diagnostics,
+        }), 500
+
+
+@app.route('/api/update/diagnose', methods=['GET'])
+@handle_error
+def update_diagnose():
+    """Run diagnostic checks and return full environment info for debugging."""
+    import traceback as tb
+    info = {}
+
+    # Basic env
+    info['SERVER_DIR'] = SERVER_DIR
+    info['SERVER_DIR_exists'] = os.path.exists(SERVER_DIR)
+    info['APP_VERSION'] = APP_VERSION
+    info['pid'] = os.getpid()
+    info['cwd'] = os.getcwd()
+    info['uid'] = os.getuid()
+    info['gid'] = os.getgid()
+    info['tempdir'] = tempfile.gettempdir()
+    info['user_home'] = os.path.expanduser('~')
+
+    # SERVER_DIR permissions
+    if os.path.exists(SERVER_DIR):
+        try:
+            st = os.stat(SERVER_DIR)
+            info['SERVER_DIR_stat'] = {
+                'mode': oct(st.st_mode),
+                'uid': st.st_uid,
+                'gid': st.st_gid,
+                'writable': os.access(SERVER_DIR, os.W_OK),
+                'readable': os.access(SERVER_DIR, os.R_OK),
+            }
+        except Exception as e:
+            info['SERVER_DIR_stat_error'] = str(e)
+
+        # List contents
+        try:
+            contents = os.listdir(SERVER_DIR)
+            info['SERVER_DIR_contents'] = contents[:20]
+            info['SERVER_DIR_file_count'] = len(contents)
+        except Exception as e:
+            info['SERVER_DIR_list_error'] = str(e)
+    else:
+        info['SERVER_DIR_missing'] = True
+
+    # Write test on SERVER_DIR
+    write_test_path = os.path.join(SERVER_DIR, '.diag_test')
+    try:
+        with open(write_test_path, 'w') as f:
+            f.write('diagnostic test')
+        os.remove(write_test_path)
+        info['SERVER_DIR_write'] = True
+    except Exception as e:
+        info['SERVER_DIR_write'] = False
+        info['SERVER_DIR_write_error'] = f'{type(e).__name__}: {e}'
+
+    # Write test on /tmp
+    tmp_test_path = os.path.join(tempfile.gettempdir(), '.diag_test')
+    try:
+        with open(tmp_test_path, 'w') as f:
+            f.write('diagnostic test')
+        os.remove(tmp_test_path)
+        info['tmp_write'] = True
+    except Exception as e:
+        info['tmp_write'] = False
+        info['tmp_write_error'] = f'{type(e).__name__}: {e}'
+
+    # Disk space
+    for d in [SERVER_DIR, tempfile.gettempdir(), '/tmp', '/root']:
+        try:
+            if os.path.exists(d):
+                st = os.statvfs(d)
+                info[f'disk_{d}_free_mb'] = round((st.f_bavail * st.f_frsize) / (1024 * 1024), 1)
+        except Exception:
+            pass
+
+    # Network test - GitHub API
+    try:
+        req = urllib.request.Request(
+            f'https://api.github.com/repos/{GITHUB_REPO}/commits/main',
+            headers={'User-Agent': 'PhoneIDE-Server'},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            info['github_api'] = 'OK'
+            info['github_latest_sha'] = data.get('sha', '')[:12]
+            info['github_latest_msg'] = data.get('commit', {}).get('message', '').split('\n')[0]
+    except Exception as e:
+        info['github_api'] = f'FAIL: {type(e).__name__}: {e}'
+
+    # Network test - zip download URL (just HEAD check via GET with small range)
+    try:
+        req = urllib.request.Request(
+            f'https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip',
+            headers={'User-Agent': 'PhoneIDE-Server', 'Range': 'bytes=0-0'},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info['github_zip'] = 'OK'
+            info['github_zip_status'] = resp.status
+            info['github_zip_size'] = resp.headers.get('Content-Length', 'unknown')
+    except Exception as e:
+        info['github_zip'] = f'FAIL: {type(e).__name__}: {e}'
+
+    # Git check
+    git_dir = os.path.join(SERVER_DIR, '.git')
+    info['git_dir_exists'] = os.path.exists(git_dir)
+    if os.path.exists(git_dir):
+        try:
+            r = subprocess.run('git remote -v', shell=True, capture_output=True, text=True,
+                               timeout=10, cwd=SERVER_DIR)
+            info['git_remote'] = r.stdout.strip()[:200] if r.stdout.strip() else r.stderr.strip()[:200]
+        except Exception as e:
+            info['git_error'] = str(e)
+
+    # Config
+    try:
+        cfg = load_config()
+        info['config_workspace'] = cfg.get('workspace', WORKSPACE)
+        info['config_has_token'] = bool(cfg.get('github_token'))
+    except Exception as e:
+        info['config_error'] = str(e)
+
+    # Server log tail
+    try:
+        log_file = os.path.join(CONFIG_DIR, 'server.log')
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                lines = f.readlines()
+                info['server_log_tail'] = [l.rstrip() for l in lines[-20:]]
+    except Exception:
+        pass
+
+    return jsonify(info)
 
 # ==================== System Info API ====================
 @app.route('/api/system/info', methods=['GET'])
