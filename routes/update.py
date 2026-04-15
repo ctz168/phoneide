@@ -117,17 +117,17 @@ def update_check():
             # If we can't determine current version, assume update needed
             apk_update = True
 
-        # 2. Also check code commits
+        # 2. Check code commits - fetch first to get latest remote refs
         code_update = False
         remote_sha = ''
         remote_message = ''
         local_sha = ''
         commits_behind = 0
         try:
-            commit_data = _fetch_github_json(f'https://api.github.com/repos/{GITHUB_REPO}/commits/main')
-            remote_sha = commit_data.get('sha', '')
-            remote_message = commit_data.get('commit', {}).get('message', '')
+            # Fetch latest refs from origin (needed to compare properly)
+            git_cmd('fetch origin main', cwd=SERVER_DIR, timeout=30)
 
+            # Get local HEAD
             try:
                 r = git_cmd('rev-parse HEAD', cwd=SERVER_DIR)
                 if r['ok']:
@@ -135,8 +135,37 @@ def update_check():
             except Exception:
                 pass
 
-            if local_sha and local_sha != remote_sha:
+            # Get remote main SHA from FETCH_HEAD or origin/main
+            try:
+                r = git_cmd('rev-parse FETCH_HEAD', cwd=SERVER_DIR)
+                if r['ok']:
+                    remote_sha = r['stdout'].strip()
+                else:
+                    r = git_cmd('rev-parse origin/main', cwd=SERVER_DIR)
+                    if r['ok']:
+                        remote_sha = r['stdout'].strip()
+            except Exception:
+                pass
+
+            # Fallback to GitHub API if local fetch didn't give us remote SHA
+            if not remote_sha:
+                try:
+                    commit_data = _fetch_github_json(f'https://api.github.com/repos/{GITHUB_REPO}/commits/main')
+                    remote_sha = commit_data.get('sha', '')
+                    remote_message = commit_data.get('commit', {}).get('message', '')
+                except Exception:
+                    pass
+
+            if local_sha and remote_sha and local_sha != remote_sha:
                 code_update = True
+                # Get remote commit message if we don't have it yet
+                if not remote_message:
+                    try:
+                        r = git_cmd(f'log -1 --format=%s {remote_sha}', cwd=SERVER_DIR)
+                        if r['ok']:
+                            remote_message = r['stdout'].strip()
+                    except Exception:
+                        pass
                 try:
                     r = git_cmd(f'rev-list --count {local_sha}..{remote_sha}', cwd=SERVER_DIR)
                     if r['ok']:
@@ -185,21 +214,17 @@ def update_apply():
         if not os.path.exists(os.path.join(SERVER_DIR, '.git')):
             return jsonify({'error': 'Server directory is not a git repository'}), 400
 
-        # git stash any local changes
-        stash_result = git_cmd('stash', cwd=SERVER_DIR)
+        # Fetch latest from origin
+        fetch_result = git_cmd('fetch origin main', cwd=SERVER_DIR, timeout=120)
+        if not fetch_result['ok']:
+            return jsonify({'error': f'Git fetch failed: {fetch_result["stderr"]}', 'stdout': fetch_result['stdout']}), 500
 
-        # Pull latest
-        pull_result = git_cmd('pull origin main', cwd=SERVER_DIR, timeout=120)
-        if not pull_result['ok']:
-            # Restore stash on failure
-            git_cmd('stash pop', cwd=SERVER_DIR)
-            return jsonify({'error': f'Git pull failed: {pull_result["stderr"]}', 'stdout': pull_result['stdout']}), 500
+        # Use reset --hard to update to origin/main (handles shallow repos and diverged history)
+        reset_result = git_cmd('reset --hard origin/main', cwd=SERVER_DIR)
+        if not reset_result['ok']:
+            return jsonify({'error': f'Git reset failed: {reset_result["stderr"]}', 'stdout': reset_result['stdout']}), 500
 
-        # Restore stash
-        if stash_result['ok']:
-            git_cmd('stash pop', cwd=SERVER_DIR)
-
-        log_write(f'[UPDATE] Pulled latest code: {pull_result["stdout"][:200]}')
+        log_write(f'[UPDATE] Updated to latest: {reset_result["stdout"][:200]}')
 
         # Restart server
         marker = os.path.join(CONFIG_DIR, 'restart_marker.json')
@@ -228,7 +253,7 @@ def update_apply():
         return jsonify({
             'ok': True,
             'message': 'Update applied, server restarting...',
-            'pull_output': pull_result['stdout'][:500],
+            'pull_output': reset_result['stdout'][:500],
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

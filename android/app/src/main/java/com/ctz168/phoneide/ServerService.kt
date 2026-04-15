@@ -360,7 +360,8 @@ class ServerService : Service() {
 
     /**
      * Ensure /root/phoneide is a git repo so code updates (git pull) work.
-     * Does NOT disturb existing tracked files.
+     * Only initializes git + remote; does NOT auto-checkout to avoid
+     * overwriting asset files before the user explicitly requests an update.
      */
     private fun ensureGitRepo(pm: ProcessManager) {
         val check = pm.runInProotSync(
@@ -370,14 +371,14 @@ class ServerService : Service() {
             emitLog("[INFO] Git repo already initialized")
             return
         }
-        // Not a git repo - initialize and add remote
+        // Not a git repo - initialize (without checking out remote files)
         pm.runInProotSync(
             "cd /root/phoneide && " +
             "git init && " +
             "git remote add origin https://github.com/ctz168/phoneide.git 2>/dev/null; " +
-            "git fetch --depth=1 origin main 2>/dev/null; " +
-            "git checkout main 2>/dev/null || true",
-            60
+            "git add -A && " +
+            "git commit -m 'initial from assets' 2>/dev/null || true",
+            30
         )
         emitLog("[INFO] Git repo initialized for code updates")
     }
