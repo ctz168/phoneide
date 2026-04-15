@@ -603,11 +603,16 @@ class MainActivity : AppCompatActivity() {
         // Connect to SSE log stream in background
         scope.launch(Dispatchers.IO) {
             try {
+                val logHttpClient = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(120, TimeUnit.SECONDS) // Long timeout for SSE stream
+                    .writeTimeout(10, TimeUnit.SECONDS)
+                    .build()
+
                 val request = Request.Builder()
                     .url("${PhoneIDEApp.SERVER_URL}/api/server/logs/stream")
-                    .readTimeout(120, TimeUnit.SECONDS) // Long timeout for SSE stream
                     .build()
-                val response = updateHttpClient.newCall(request).execute()
+                val response = logHttpClient.newCall(request).execute()
 
                 if (!response.isSuccessful) {
                     withContext(Dispatchers.Main) {
