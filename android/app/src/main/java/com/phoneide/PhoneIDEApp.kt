@@ -17,32 +17,44 @@ class PhoneIDEApp : Application() {
 
         const val PREF_NAME = "phoneide_prefs"
         const val PREF_SETUP_COMPLETE = "setup_complete"
-        const val PREF_SERVER_PID = "server_pid"
 
-        // Termux package
-        const val TERMUX_PACKAGE = "com.termux"
-        const val TERMUX_FILE_PACKAGE = "com.termux.filemanager"
-        const val F_DROID_URL = "https://f-droid.org/packages/com.termux/"
-
-        // Internal paths
-        const val IDE_DIR = "phoneide"
-        const val WORKSPACE_DIR = "workspace"
+        // Version
+        const val VERSION_NAME = "3.0.0"
+        const val VERSION_CODE = 3
     }
+
+    // Shared instances
+    lateinit var processManager: ProcessManager
+        private set
+    lateinit var bootstrapManager: BootstrapManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+
+        // Initialize managers with direct paths (matching stableclaw pattern)
+        val filesDir = filesDir.absolutePath
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        processManager = ProcessManager(filesDir, nativeLibDir)
+        bootstrapManager = BootstrapManager(this, filesDir, nativeLibDir)
+
+        // Ensure directories and resolv.conf exist on every start
+        Thread {
+            try { processManager.initialize() } catch (_: Exception) {}
+            try { bootstrapManager.writeResolvConf() } catch (_: Exception) {}
+        }.start()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "IDE 服务",
+                "IDE Server",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "PhoneIDE 后台服务通知"
+                description = "PhoneIDE background server"
                 setShowBadge(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -60,13 +72,8 @@ class PhoneIDEApp : Application() {
         prefs.edit().putBoolean(PREF_SETUP_COMPLETE, complete).apply()
     }
 
-    fun getIdeDir(): String {
-        return filesDir.absolutePath + "/" + IDE_DIR
-    }
-
-    fun getWorkspaceDir(): String {
-        return filesDir.absolutePath + "/" + WORKSPACE_DIR
-    }
+    fun getIdeDir(): String = filesDir.absolutePath + "/phoneide"
+    fun getRootfsDir(): String = filesDir.absolutePath + "/rootfs/ubuntu"
 
     lateinit var instance: PhoneIDEApp
         private set

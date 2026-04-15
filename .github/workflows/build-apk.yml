@@ -1,0 +1,76 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ar zstd
+
+    - name: Fetch proot binaries
+      run: |
+        chmod +x scripts/fetch-proot-binaries.sh
+        ./scripts/fetch-proot-binaries.sh
+
+    - name: Verify jniLibs
+      run: |
+        echo "=== jniLibs contents ==="
+        find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
+
+    - name: Copy IDE files to assets
+      run: |
+        mkdir -p android/app/src/main/assets/ide
+        cp server.py android/app/src/main/assets/ide/
+        cp requirements.txt android/app/src/main/assets/ide/
+        cp -r static android/app/src/main/assets/ide/
+        echo "=== Assets contents ==="
+        find android/app/src/main/assets/ide -type f | head -20
+
+    - name: Create gradle wrapper
+      working-directory: android
+      run: |
+        gradle wrapper --gradle-version 8.2
+
+    - name: Make gradlew executable
+      working-directory: android
+      run: chmod +x gradlew
+
+    - name: Build Debug APK
+      working-directory: android
+      run: ./gradlew assembleDebug --no-daemon
+
+    - name: Sign APK with debug key
+      run: |
+        cp android/app/build/outputs/apk/debug/app-debug.apk phoneide-debug.apk
+
+    - name: Upload APK to Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: "PhoneIDE Latest Build"
+        body: |
+          Automated build from commit ${{ github.sha }}
+          Build time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        files: phoneide-debug.apk
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -673,9 +673,9 @@ class MainActivity : AppCompatActivity() {
             }
             R.id.menu_about -> {
                 MaterialAlertDialogBuilder(this)
-                    .setTitle("PhoneIDE v1.0")
-                    .setMessage("基于 Termux + proot Ubuntu 的手机端 Web IDE\n\n" +
-                            "功能：代码编辑、终端、Git、LLM 聊天\n" +
+                    .setTitle("PhoneIDE v${PhoneIDEApp.VERSION_NAME}")
+                    .setMessage("基于 proot Ubuntu 的手机端 Web IDE\n\n" +
+                            "功能：代码编辑、终端、Git、LLM Agent\n" +
                             "端口：${PhoneIDEApp.SERVER_PORT}")
                     .setPositiveButton("确定", null)
                     .show()

@@ -5,14 +5,15 @@ plugins {
 
 android {
     namespace = "com.phoneide"
+    extractNativeLibs = true
     compileSdk = 34
 
     defaultConfig {
         applicationId = "com.phoneide"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "3.0.0"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -42,6 +43,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "META-INF/DEPENDENCIES",
@@ -79,4 +83,8 @@ dependencies {
 
     // JSON parsing
     implementation("org.json:json:20231013")
+
+    // Apache Commons Compress for rootfs extraction (tar.gz)
+    implementation("org.apache.commons:commons-compress:1.26.0")
+    implementation("org.tukaani:xz:1.9")
 }
