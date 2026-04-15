@@ -99,8 +99,13 @@ const FileManager = (() => {
      * Fetch the file list for a given directory path
      */
     async function loadFileList(path) {
-        // Empty string or undefined means root workspace — send no path param
-        const param = (path && path !== '/workspace') ? `?path=${encodeURIComponent(path)}` : '';
+        // currentPath like '/workspace' = root (server needs no path param)
+        // currentPath like '/workspace/myrepo' = subdirectory (server needs 'myrepo')
+        let param = '';
+        if (path && path !== '/workspace' && path !== '/') {
+            const rel = path.replace(/^\/workspace\/?/, '');
+            if (rel) param = `?path=${encodeURIComponent(rel)}`;
+        }
         path = normalizePath(path);
         currentPath = path;
         updateBreadcrumb(path);
@@ -130,7 +135,9 @@ const FileManager = (() => {
      */
     async function openFile(path) {
         try {
-            const resp = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
+            // Convert absolute path to relative path for server API
+            const relPath = path.replace(/^\/workspace\/?/, '');
+            const resp = await fetch(`/api/files/read?path=${encodeURIComponent(relPath)}`);
             if (!resp.ok) throw new Error(`Failed to open file: ${resp.statusText}`);
             const data = await resp.json();
             const content = data.content !== undefined ? data.content : '';
@@ -173,11 +180,12 @@ const FileManager = (() => {
         }
 
         try {
+            const relPath = currentFilePath ? currentFilePath.replace(/^\/workspace\/?/, '') : '';
             const resp = await fetch('/api/files/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    path: currentFilePath,
+                    path: relPath,
                     content: content
                 })
             });
@@ -203,6 +211,7 @@ const FileManager = (() => {
         }
 
         newPath = normalizePath(newPath);
+        const relPath = newPath.replace(/^\/workspace\/?/, '');
 
         let content = '';
         if (window.EditorManager && typeof window.EditorManager.getContent === 'function') {
@@ -217,7 +226,7 @@ const FileManager = (() => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    path: newPath,
+                    path: relPath,
                     content: content
                 })
             });
@@ -248,12 +257,13 @@ const FileManager = (() => {
         if (!name) return;
 
         const path = joinPath(currentPath, name);
+        const relPath = path.replace(/^\/workspace\/?/, '');
 
         try {
             const resp = await fetch('/api/files/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, type: 'file' })
+                body: JSON.stringify({ path: relPath, type: 'file' })
             });
             if (!resp.ok) {
                 const errData = await resp.json().catch(() => ({}));
@@ -278,12 +288,13 @@ const FileManager = (() => {
         if (!name) return;
 
         const path = joinPath(currentPath, name);
+        const relPath = path.replace(/^\/workspace\/?/, '');
 
         try {
             const resp = await fetch('/api/files/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, type: 'directory' })
+                body: JSON.stringify({ path: relPath, type: 'directory' })
             });
             if (!resp.ok) {
                 const errData = await resp.json().catch(() => ({}));
@@ -305,11 +316,12 @@ const FileManager = (() => {
         const confirmed = await confirmDialog(`Delete "${name}"?`, 'This action cannot be undone.');
         if (!confirmed) return;
 
+        const relPath = path.replace(/^\/workspace\/?/, '');
         try {
             const resp = await fetch('/api/files/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path })
+                body: JSON.stringify({ path: relPath })
             });
             if (!resp.ok) throw new Error(`Failed to delete: ${resp.statusText}`);
 
@@ -350,11 +362,17 @@ const FileManager = (() => {
             if (!newName) return;
         }
 
+        const oldRel = oldPath.replace(/^\/workspace\/?/, '');
+        const parentDir = parentPath(oldPath);
+        const newRel = parentDir !== '/workspace' && parentDir !== '/'
+            ? parentDir.replace(/^\/workspace\/?/, '') + '/' + newName
+            : newName;
+
         try {
             const resp = await fetch('/api/files/rename', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ old_path: oldPath, new_path: joinPath(parentPath(oldPath), newName) })
+                body: JSON.stringify({ old_path: oldRel, new_path: newRel })
             });
             if (!resp.ok) throw new Error(`Failed to rename: ${resp.statusText}`);
 
@@ -644,12 +662,13 @@ const FileManager = (() => {
         const name = await promptDialog('New File', 'Enter file name:', 'untitled.txt');
         if (!name) return;
         const path = joinPath(dirPath, name);
+        const relPath = path.replace(/^\/workspace\/?/, '');
 
         try {
             const resp = await fetch('/api/files/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, type: 'file' })
+                body: JSON.stringify({ path: relPath, type: 'file' })
             });
             if (!resp.ok) {
                 const errData = await resp.json().catch(() => ({}));
@@ -669,12 +688,13 @@ const FileManager = (() => {
         const name = await promptDialog('New Folder', 'Enter folder name:', 'new_folder');
         if (!name) return;
         const path = joinPath(dirPath, name);
+        const relPath = path.replace(/^\/workspace\/?/, '');
 
         try {
             const resp = await fetch('/api/files/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, type: 'directory' })
+                body: JSON.stringify({ path: relPath, type: 'directory' })
             });
             if (!resp.ok) {
                 const errData = await resp.json().catch(() => ({}));

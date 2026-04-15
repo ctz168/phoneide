@@ -18,8 +18,11 @@ const GitManager = (() => {
     function getGitCwd() {
         if (window.FileManager) {
             const cp = window.FileManager.currentPath;
+            // Return path relative to workspace for the server API
+            // currentPath is like '/workspace/myrepo' — server needs 'myrepo'
             if (cp && cp !== '/workspace' && cp !== '/' && cp !== '') {
-                return cp;
+                // Strip leading /workspace prefix if present
+                return cp.replace(/^\/workspace\/?/, '');
             }
         }
         return '';
@@ -146,17 +149,12 @@ const GitManager = (() => {
             // Navigate into cloned folder
             const clonePath = data.path;
             if (window.FileManager && clonePath) {
-                await window.FileManager.openFolder(clonePath);
+                // clonePath is relative from server, prepend /workspace for FileManager
+                const fullPath = '/workspace/' + clonePath.replace(/^\\//, '');
+                await window.FileManager.openFolder(fullPath);
             }
 
-            // Try git init in the cloned folder (ignore if already a repo)
-            try {
-                await fetch('/api/git/init', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: clonePath })
-                });
-            } catch (_e) {}
+            // No need to git init — cloned repos already have .git
 
             // Refresh file list
             if (window.FileManager) {
@@ -507,10 +505,11 @@ const GitManager = (() => {
         }
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/stash', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, ...options })
+                body: JSON.stringify({ action, path: gitCwd, ...options })
             });
             if (!resp.ok) throw new Error(`Stash ${action} failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -539,9 +538,14 @@ const GitManager = (() => {
      */
     async function diff(filepath) {
         try {
-            const url = filepath
-                ? `/api/git/diff?path=${encodeURIComponent(filepath)}`
-                : '/api/git/diff';
+            const gitCwd = getGitCwd();
+            let url;
+            if (filepath) {
+                url = `/api/git/diff?path=${encodeURIComponent(filepath)}&cwd=${encodeURIComponent(gitCwd)}`;
+            } else {
+                const params = gitCwd ? `?cwd=${encodeURIComponent(gitCwd)}` : '';
+                url = `/api/git/diff${params}`;
+            }
             const resp = await fetch(url);
             if (!resp.ok) throw new Error(`Diff failed: ${resp.statusText}`);
             const data = await resp.json();

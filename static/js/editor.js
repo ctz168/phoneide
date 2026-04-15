@@ -143,7 +143,7 @@ const EditorManager = (() => {
             lineWrapping: config.lineWrapping,
             viewportMargin: Infinity,        // render full doc for mobile perf
 
-            // Mobile-friendly input
+            // Mobile-friendly input — textarea mode for search dialog compatibility
             inputStyle: 'textarea',
 
             // Indentation
