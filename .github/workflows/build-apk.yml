@@ -62,12 +62,25 @@ jobs:
     - name: Copy IDE files to assets
       run: |
         mkdir -p android/app/src/main/assets/ide
+        # Core Python backend
         cp server.py android/app/src/main/assets/ide/
+        cp utils.py android/app/src/main/assets/ide/
         cp requirements.txt android/app/src/main/assets/ide/
+        # Routes (blueprint modules)
+        cp -r routes android/app/src/main/assets/ide/
+        # Frontend static files
         cp -r static android/app/src/main/assets/ide/
         echo "=== Assets ==="
         find android/app/src/main/assets/ide -type f | wc -l
         echo "files packaged"
+        # Verify critical files exist
+        for f in server.py utils.py routes/__init__.py static/index.html; do
+          if [ ! -f "android/app/src/main/assets/ide/$f" ]; then
+            echo "ERROR: Missing critical file: $f"
+            exit 1
+          fi
+        done
+        echo "All critical files verified"
 
     # Step 3: Build with Gradle
     - name: Build Debug APK
@@ -119,19 +132,35 @@ jobs:
         path: dist/PhoneIDE-release.apk
 
     # Publish to GitHub Releases
+    - name: Get version info
+      id: version
+      run: |
+        VERSION=$(grep 'versionName' android/app/build.gradle | head -1 | sed "s/.*"\([^"]*\)".*/\1/")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v3.0.${{ github.run_number }}
-        name: "PhoneIDE v3.0.${{ github.run_number }}"
+        tag_name: v${{ steps.version.outputs.version }}-build.${{ github.run_number }}
+        name: "PhoneIDE v${{ steps.version.outputs.version }}-build.${{ github.run_number }}"
         body: |
-          ## PhoneIDE v3.0.${{ github.run_number }}
+          ## PhoneIDE v${{ steps.version.outputs.version }}
 
           Mobile Web IDE for Android - based on proot Ubuntu.
 
           ### Changes
           - Commit: `${{ github.sha }}`
           - Build: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          - Run: #${{ github.run_number }}
+
+          ### Features
+          - Code editor with syntax highlighting (CodeMirror)
+          - Terminal emulator (proot Ubuntu shell)
+          - Git operations (clone, pull, push, commit)
+          - LLM AI chat (OpenAI-compatible API)
+          - File manager with create/rename/delete
+          - Python/Shell execution with streaming output
 
           ### Install
           1. Download `PhoneIDE-release.apk`
