@@ -2033,6 +2033,7 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
         autoResizeInput,
         abortGeneration,
         injectPlanActions,
+        showSettingsDialog,
         showPlanEditor,
 
         // Getters

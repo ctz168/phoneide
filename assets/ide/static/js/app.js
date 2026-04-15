@@ -1366,10 +1366,10 @@ const AppManager = (() => {
                 await TerminalManager.loadVenvInfo();
             }
 
-            // Wire up chat settings button
+            // Wire up chat settings button - use ChatManager's full settings dialog (with Test button)
             const chatSettingsBtn = document.getElementById('chat-settings-btn');
-            if (chatSettingsBtn) {
-                chatSettingsBtn.addEventListener('click', () => showLLMSettingsDialog());
+            if (chatSettingsBtn && window.ChatManager && ChatManager.showSettingsDialog) {
+                chatSettingsBtn.addEventListener('click', () => ChatManager.showSettingsDialog());
             }
 
             showToast('PhoneIDE 就绪', 'success', 1500);

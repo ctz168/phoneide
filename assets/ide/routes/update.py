@@ -3,6 +3,7 @@ PhoneIDE - IDE Update API routes.
 """
 
 import os
+import re
 import sys
 import json
 import subprocess
@@ -32,11 +33,54 @@ def _fetch_github_json(url, timeout=15):
         return json.loads(resp.read().decode())
 
 
+def _parse_version(version_str):
+    """Parse version string like '3.0.40' or '3.0.40-build.6305' into comparable tuple.
+
+    Returns (major, minor, patch) tuple, ignoring any build suffix.
+    Returns None if parsing fails.
+    """
+    if not version_str:
+        return None
+    # Strip leading 'v' and split on first '-' to remove build suffix
+    cleaned = version_str.lstrip('v').split('-')[0]
+    m = re.match(r'(\d+)\.(\d+)\.(\d+)', cleaned)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return None
+
+
+def _get_current_version():
+    """Try to read the current app version from build.gradle."""
+    gradle_path = os.path.join(SERVER_DIR, 'android', 'app', 'build.gradle')
+    if os.path.exists(gradle_path):
+        try:
+            with open(gradle_path, 'r') as f:
+                for line in f:
+                    if 'versionName' in line and 'versionCode' not in line:
+                        m = re.search(r"versionName\s+['\"]([^'\"]+)['\"]", line)
+                        if m:
+                            return m.group(1)
+        except Exception:
+            pass
+    # Fallback: try reading from local git describe
+    try:
+        r = git_cmd('describe --tags --abbrev=0', cwd=SERVER_DIR)
+        if r['ok'] and r['stdout'].strip():
+            return r['stdout'].strip().lstrip('v')
+    except Exception:
+        pass
+    return '0.0.0'
+
+
 @bp.route('/api/update/check', methods=['POST'])
 @handle_error
 def update_check():
     """Check for updates by fetching latest version from GitHub Releases."""
     try:
+        # Get current version
+        current_version = _get_current_version()
+        current_ver = _parse_version(current_version)
+
         # 1. Check GitHub Releases for latest APK
         release_data = _fetch_github_json(GITHUB_RELEASES_URL)
         latest_tag = release_data.get('tag_name', '')
@@ -45,8 +89,8 @@ def update_check():
         release_date = release_data.get('published_at', '')
         html_url = release_data.get('html_url', '')
 
-        # Extract version number from tag (e.g. "v3.0.29" -> "3.0.29")
-        version = latest_tag.lstrip('v')
+        # Parse latest version from tag
+        latest_ver = _parse_version(latest_tag)
 
         # Find the release APK asset
         apk_url = ''
@@ -64,6 +108,14 @@ def update_check():
                     apk_url = asset.get('browser_download_url', '')
                     apk_size = asset.get('size', 0)
                     break
+
+        # Compare versions for APK update
+        apk_update = False
+        if apk_url and current_ver and latest_ver:
+            apk_update = latest_ver > current_ver
+        elif apk_url and not current_ver:
+            # If we can't determine current version, assume update needed
+            apk_update = True
 
         # 2. Also check code commits
         code_update = False
@@ -95,15 +147,14 @@ def update_check():
             pass
 
         # Check if update available (APK or code)
-        apk_update = bool(apk_url)
         update_available = apk_update or code_update
 
         return jsonify({
             'update_available': update_available,
             'apk_update': apk_update,
             'code_update': code_update,
-            'current_version': '3.0.1',
-            'new_version': version,
+            'current_version': current_version,
+            'new_version': latest_tag.lstrip('v').split('-')[0],
             'latest_tag': latest_tag,
             'release_name': release_name,
             'release_body': release_body,
@@ -119,10 +170,10 @@ def update_check():
         })
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': '3.0.0'})
-        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': '3.0.0'})
+            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': _get_current_version()})
+        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': _get_current_version()})
     except Exception as e:
-        return jsonify({'error': str(e), 'update_available': False, 'current_version': '3.0.0'})
+        return jsonify({'error': str(e), 'update_available': False, 'current_version': _get_current_version()})
 
 
 @bp.route('/api/update/apply', methods=['POST'])
