@@ -32,6 +32,7 @@
         android:theme="@style/Theme.PhoneIDE"
         android:usesCleartextTraffic="true"
         android:largeHeap="true"
+        android:extractNativeLibs="true"
         android:requestLegacyExternalStorage="true">
 
         <!-- Main IDE Activity -->

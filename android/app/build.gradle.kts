@@ -5,7 +5,6 @@ plugins {
 
 android {
     namespace = "com.phoneide"
-    extractNativeLibs = true
     compileSdk = 34
 
     defaultConfig {
