@@ -2,6 +2,7 @@ package com.phoneide
 
 import android.content.Context
 import android.os.Build
+import android.system.Os
 import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -11,62 +12,35 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * BootstrapManager - Manages Ubuntu rootfs lifecycle for proot.
- * Downloads rootfs tarball, extracts with pure Java (Apache Commons Compress),
- * and configures proot compatibility patches.
- */
 class BootstrapManager(
     private val context: Context,
     private val processManager: ProcessManager
 ) {
-
     companion object {
         private const val TAG = "BootstrapManager"
-
         private const val RELEASES_BASE = "https://github.com/termux/proot-distro/releases/download"
 
-        /**
-         * Build the list of rootfs download URLs based on device ABI.
-         * Includes multiple Ubuntu versions and GitHub mirror proxies.
-         */
         fun getRootfsUrls(): List<String> {
             val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-            val archSuffix = if (primaryAbi.startsWith("arm64") || primaryAbi == "aarch64") {
-                "aarch64"
-            } else if (primaryAbi.startsWith("armeabi") || primaryAbi.startsWith("arm")) {
-                "arm"
-            } else {
-                // Fallback: try aarch64 first for unknown archs
-                "aarch64"
-            }
-
-            Log.d(TAG, "Detected arch: $primaryAbi -> suffix: $archSuffix")
+            val archSuffix = if (primaryAbi.startsWith("arm64") || primaryAbi == "aarch64") "aarch64"
+                             else if (primaryAbi.startsWith("armeabi") || primaryAbi.startsWith("arm")) "arm"
+                             else "aarch64"
 
             val urls = mutableListOf<String>()
-
-            // Ubuntu 24.04 LTS (noble) - most stable, recommended
+            // Ubuntu 24.04 LTS (noble) - most stable
             urls.add("$RELEASES_BASE/v4.18.0/ubuntu-noble-$archSuffix-pd-v4.18.0.tar.xz")
-
-            // Ubuntu 25.04 (plucky) - newer
+            // Ubuntu 25.04 (plucky)
             urls.add("$RELEASES_BASE/v4.29.0/ubuntu-plucky-$archSuffix-pd-v4.29.0.tar.xz")
-
-            // Ubuntu 25.10 (questing) - latest
+            // Ubuntu 25.10 (questing)
             urls.add("$RELEASES_BASE/v4.30.1/ubuntu-questing-$archSuffix-pd-v4.30.1.tar.xz")
-
-            // Ubuntu 24.04 LTS (noble) v4.11.0 - smaller size fallback
+            // Fallback: smaller noble
             urls.add("$RELEASES_BASE/v4.11.0/ubuntu-noble-$archSuffix-pd-v4.11.0.tar.xz")
 
-            // GitHub mirror proxies (for users who can't access github.com directly)
-            val ghProxies = listOf(
-                "https://ghfast.top",
-                "https://gh-proxy.com"
-            )
-            for (proxy in ghProxies) {
+            // Mirror proxies
+            for (proxy in listOf("https://ghfast.top", "https://gh-proxy.com")) {
                 urls.add("$proxy/$RELEASES_BASE/v4.18.0/ubuntu-noble-$archSuffix-pd-v4.18.0.tar.xz")
                 urls.add("$proxy/$RELEASES_BASE/v4.29.0/ubuntu-plucky-$archSuffix-pd-v4.29.0.tar.xz")
             }
-
             return urls
         }
     }
@@ -85,30 +59,18 @@ class BootstrapManager(
 
     fun isRootfsReady(): Boolean {
         val rootfsDir = processManager.getRootfsDir()
-        val bashExists = File("$rootfsDir/bin/bash").exists()
-        val aptExists = File("$rootfsDir/etc/apt").isDirectory
-        val usrExists = File("$rootfsDir/usr").isDirectory
-        Log.d(TAG, "isRootfsReady: bash=$bashExists, apt=$aptExists, usr=$usrExists")
-        return bashExists && (aptExists || usrExists)
+        return File("$rootfsDir/bin/bash").exists() ||
+               File("$rootfsDir/usr/bin/bash").exists()
     }
 
-    /**
-     * Full bootstrap: download -> extract -> configure -> install deps.
-     * Call from a coroutine/background thread.
-     */
     fun bootstrap(): Boolean {
-        if (isRunning.getAndSet(true)) {
-            Log.w(TAG, "Bootstrap already in progress")
-            return false
-        }
-
+        if (isRunning.getAndSet(true)) return false
         try {
             processManager.initialize()
             val rootfsDir = processManager.getRootfsDir()
-
             reportProgress(0, "Starting bootstrap...")
 
-            // Step 1: Download rootfs
+            // Step 1: Download
             if (!isRootfsReady()) {
                 reportProgress(5, "Downloading Ubuntu rootfs...")
                 if (!downloadRootfs(rootfsDir)) {
@@ -117,30 +79,29 @@ class BootstrapManager(
                 }
                 reportProgress(40, "Rootfs downloaded")
             } else {
-                reportProgress(40, "Rootfs already exists, skipping download")
+                reportProgress(40, "Rootfs exists")
             }
 
-            // Step 2: Extract rootfs
-            reportProgress(45, "Extracting rootfs (this may take a few minutes)...")
-            // If not yet extracted (download saved as .tar.xz)
+            // Step 2: Extract
             val tarFile = File("$rootfsDir/rootfs.tar.xz")
             if (tarFile.exists()) {
+                reportProgress(45, "Extracting rootfs...")
                 extractRootfs(tarFile, rootfsDir)
                 tarFile.delete()
             }
             reportProgress(70, "Rootfs extracted")
 
-            // Step 3: Configure rootfs for proot compatibility
+            // Step 3: Configure
             reportProgress(75, "Configuring proot compatibility...")
             configureRootfs()
-            reportProgress(80, "Rootfs configured")
+            reportProgress(80, "Configured")
 
-            // Step 4: Install Python and dependencies
-            reportProgress(85, "Installing Python and Flask...")
+            // Step 4: Install deps (non-fatal)
+            reportProgress(85, "Installing Python & Flask...")
             installDependencies()
-            reportProgress(95, "Dependencies installed")
+            reportProgress(95, "Deps installed")
 
-            // Step 5: Copy IDE files into rootfs
+            // Step 5: IDE files
             reportProgress(97, "Setting up IDE files...")
             setupIDEFiles()
 
@@ -148,7 +109,7 @@ class BootstrapManager(
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Bootstrap failed", e)
-            reportProgress(-1, "Bootstrap failed: ${e.message}")
+            reportProgress(-1, "Failed: ${e.message}")
             return false
         } finally {
             isRunning.set(false)
@@ -158,347 +119,414 @@ class BootstrapManager(
     private fun downloadRootfs(rootfsDir: String): Boolean {
         val rootfsFile = File("$rootfsDir/rootfs.tar.xz")
         File(rootfsDir).mkdirs()
-
         val urls = getRootfsUrls()
-        Log.d(TAG, "Will try ${urls.size} URLs for rootfs download")
 
         for ((index, url) in urls.withIndex()) {
-            // Clean up partial download
             if (rootfsFile.exists()) rootfsFile.delete()
-
             try {
-                val label = if (index < 3) "Ubuntu ${listOf("24.04", "25.04", "25.10")[index]}" else "Proxy ${index - 2}"
-                reportProgress(5, "Trying $label (URL ${index + 1}/${urls.size})...")
-                Log.d(TAG, "Downloading from: $url")
+                val label = if (index < 4) "Ubuntu ${listOf("24.04", "25.04", "25.10", "24.04")[index]}"
+                            else "Mirror ${index - 3}"
+                reportProgress(5, "Trying $label (${index + 1}/${urls.size})...")
+                Log.d(TAG, "Downloading: $url")
 
                 downloadFile(url, rootfsFile) { bytesRead, totalBytes ->
-                    val percent = if (totalBytes > 0) {
-                        (10 + (bytesRead.toFloat() / totalBytes * 25)).toInt()
-                    } else {
-                        10
-                    }
-                    val mb = bytesRead / 1024 / 1024
-                    reportProgress(percent.coerceAtMost(38), "Downloading... ${mb}MB")
+                    val pct = if (totalBytes > 0) (10 + (bytesRead.toFloat() / totalBytes * 25)).toInt() else 10
+                    reportProgress(pct.coerceAtMost(38), "Downloading... ${bytesRead / 1024 / 1024}MB")
                 }
 
-                // Validate: at least 10MB for a valid Ubuntu rootfs
                 if (rootfsFile.exists() && rootfsFile.length() > 10_000_000) {
-                    Log.d(TAG, "Downloaded rootfs: ${rootfsFile.length() / 1024 / 1024}MB from $url")
+                    Log.d(TAG, "Downloaded ${rootfsFile.length() / 1024 / 1024}MB")
                     return true
                 } else {
-                    Log.w(TAG, "Downloaded file too small: ${rootfsFile.length()} bytes, skipping")
                     if (rootfsFile.exists()) rootfsFile.delete()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Download from URL $index failed: ${e.message}")
-                reportProgress(5, "Mirror $index failed, trying next...")
+                Log.w(TAG, "Download $index failed: ${e.message}")
             }
         }
-
-        Log.e(TAG, "All ${urls.size} download URLs failed")
+        Log.e(TAG, "All URLs failed")
         return false
     }
 
-    private fun downloadFile(
-        urlString: String,
-        targetFile: File,
-        onProgress: ((Long, Long) -> Unit)? = null
-    ) {
+    private fun downloadFile(urlString: String, targetFile: File, onProgress: ((Long, Long) -> Unit)? = null) {
         val url = URL(urlString)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 30_000
-        connection.readTimeout = 300_000  // 5 min timeout for large files (~60MB)
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("User-Agent", "PhoneIDE/2.0")
-        connection.connect()
+        val conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 300_000
+        conn.instanceFollowRedirects = true
+        conn.setRequestProperty("User-Agent", "PhoneIDE/2.0")
+        conn.connect()
 
-        val responseCode = connection.responseCode
-        if (responseCode != 200) {
-            throw IOException("HTTP $responseCode for $urlString")
-        }
+        if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
 
-        val totalBytes = connection.contentLength.toLong()
-        var bytesRead: Long = 0
-
-        connection.inputStream.use { input ->
+        val total = conn.contentLength.toLong()
+        var read: Long = 0
+        conn.inputStream.use { input ->
             targetFile.outputStream().use { output ->
-                val buffer = ByteArray(16384)  // 16KB buffer for faster download
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                    bytesRead += read
-                    onProgress?.invoke(bytesRead, totalBytes)
+                val buf = ByteArray(16384)
+                var n: Int
+                while (input.read(buf).also { n = it } != -1) {
+                    output.write(buf, 0, n)
+                    read += n
+                    onProgress?.invoke(read, total)
                 }
             }
         }
     }
 
     /**
-     * Extract rootfs tar.xz using Apache Commons Compress (pure Java, no system tools).
-     * Two-phase extraction: first files/dirs, then symlinks.
+     * Extract rootfs tar.xz - based on stableclaw_android's approach.
+     * Two-phase: files first, then symlinks. Uses Os.symlink.
+     * Skips dev/ directory. Buffered input for speed.
      */
     private fun extractRootfs(tarFile: File, rootfsDir: String) {
-        // Phase 1: Extract directories, regular files, and hard links
-        val symlinks = mutableListOf<Pair<String, String>>() // (linkTarget, entryName)
+        val deferredSymlinks = mutableListOf<Pair<String, String>>()
+        var entryCount = 0
 
         FileInputStream(tarFile).use { fis ->
-            XZCompressorInputStream(fis).use { xzIn ->
-                TarArchiveInputStream(xzIn).use { tarIn ->
-                    var entry: TarArchiveEntry? = tarIn.nextTarEntry
-                    var count = 0
-                    val totalEntries = 5000 // rough estimate for progress
-
-                    while (entry != null) {
-                        count++
-                        if (count % 100 == 0) {
-                            val percent = 45 + (count.toFloat() / totalEntries * 22).toInt().coerceAtMost(24)
-                            reportProgress(percent, "Extracting: ${entry.name}")
-                        }
-
-                        val entryFile = File(rootfsDir, entry.name)
-
-                        // Security: prevent path traversal
-                        if (!entryFile.canonicalPath.startsWith(File(rootfsDir).canonicalPath)) {
-                            entry = tarIn.nextTarEntry
-                            continue
-                        }
-
-                        when {
-                            entry.isSymbolicLink -> {
-                                symlinks.add(entry.linkName to entry.name)
+            BufferedInputStream(fis, 256 * 1024).use { bis ->
+                XZCompressorInputStream(bis).use { xzIn ->
+                    TarArchiveInputStream(xzIn).use { tarIn ->
+                        var entry: TarArchiveEntry? = tarIn.nextTarEntry
+                        while (entry != null) {
+                            entryCount++
+                            if (entryCount % 500 == 0) {
+                                reportProgress(45 + (entryCount / 200), "Extracting...")
                             }
-                            entry.isDirectory -> {
-                                entryFile.mkdirs()
+                            val name = entry.name.removePrefix("./").removePrefix("/")
+                            if (name.isEmpty() || name.startsWith("dev/")) {
+                                entry = tarIn.nextTarEntry
+                                continue
                             }
-                            entry.isFile -> {
-                                entryFile.parentFile?.mkdirs()
-                                FileOutputStream(entryFile).use { fos ->
-                                    val buf = ByteArray(8192)
-                                    var len: Int
-                                    while (tarIn.read(buf).also { len = it } != -1) {
-                                        fos.write(buf, 0, len)
+
+                            val outFile = File(rootfsDir, name)
+                            // Security check
+                            try {
+                                if (!outFile.canonicalPath.startsWith(File(rootfsDir).canonicalPath)) {
+                                    entry = tarIn.nextTarEntry; continue
+                                }
+                            } catch (_: Exception) { entry = tarIn.nextTarEntry; continue }
+
+                            when {
+                                entry.isDirectory -> outFile.mkdirs()
+                                entry.isSymbolicLink -> deferredSymlinks.add(entry.linkName to outFile.absolutePath)
+                                entry.isLink -> {
+                                    val target = entry.linkName.removePrefix("./").removePrefix("/")
+                                    val targetFile = File(rootfsDir, target)
+                                    outFile.parentFile?.mkdirs()
+                                    try {
+                                        if (targetFile.exists()) {
+                                            targetFile.copyTo(outFile, overwrite = true)
+                                            if (targetFile.canExecute()) outFile.setExecutable(true, false)
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+                                else -> {
+                                    outFile.parentFile?.mkdirs()
+                                    FileOutputStream(outFile).use { fos ->
+                                        val buf = ByteArray(65536)
+                                        var len: Int
+                                        while (tarIn.read(buf).also { len = it } != -1) fos.write(buf, 0, len)
+                                    }
+                                    outFile.setReadable(true, false)
+                                    outFile.setWritable(true, false)
+                                    val mode = entry.mode
+                                    if (mode and 0b001_001_001 != 0 || mode == 0 ||
+                                        name.contains("/bin/") || name.contains("/sbin/") ||
+                                        name.endsWith(".sh") || name.contains("/lib/apt/methods/")) {
+                                        outFile.setExecutable(true, false)
                                     }
                                 }
-                                // Preserve permissions
-                                if (entry.mode > 0) {
-                                    try {
-                                        entryFile.setReadable((entry.mode and 256) != 0)
-                                        entryFile.setExecutable((entry.mode and 64) != 0)
-                                    } catch (e: Exception) { }
-                                }
                             }
-                            entry.isLink -> {
-                                // Hard link
-                                val targetFile = File(rootfsDir, entry.linkName)
-                                if (targetFile.exists()) {
-                                    entryFile.parentFile?.mkdirs()
-                                    targetFile.copyTo(entryFile, overwrite = true)
-                                }
-                            }
+                            entry = tarIn.nextTarEntry
                         }
-
-                        entry = tarIn.nextTarEntry
                     }
                 }
             }
         }
 
-        // Phase 2: Create symlinks (deferred so target dirs exist)
+        // Phase 2: symlinks
         reportProgress(67, "Creating symlinks...")
-        for ((linkTarget, entryName) in symlinks) {
+        for ((target, path) in deferredSymlinks) {
             try {
-                val entryFile = File(rootfsDir, entryName)
-                entryFile.parentFile?.mkdirs()
-                if (entryFile.exists()) entryFile.delete()
-                java.nio.file.Files.createSymbolicLink(
-                    entryFile.toPath(),
-                    File(linkTarget).toPath()
-                )
+                val file = File(path)
+                if (file.exists()) {
+                    if (file.isDirectory) {
+                        // If target dir exists, merge contents
+                        val linkTarget = if (target.startsWith("/")) target.removePrefix("/")
+                        else {
+                            val parent = file.parentFile?.absolutePath ?: rootfsDir
+                            File(parent, target).relativeTo(File(rootfsDir)).path
+                        }
+                        val realTargetDir = File(rootfsDir, linkTarget)
+                        if (realTargetDir.exists() && realTargetDir.isDirectory) {
+                            file.listFiles()?.forEach { child ->
+                                val dest = File(realTargetDir, child.name)
+                                if (!dest.exists()) child.renameTo(dest)
+                            }
+                        }
+                        deleteRecursively(file)
+                    } else {
+                        file.delete()
+                    }
+                }
+                file.parentFile?.mkdirs()
+                Os.symlink(target, path)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to create symlink $entryName -> $linkTarget: ${e.message}")
+                Log.w(TAG, "Symlink failed $path -> $target: ${e.message}")
             }
+        }
+
+        // Verify
+        if (!File("$rootfsDir/bin/bash").exists() && !File("$rootfsDir/usr/bin/bash").exists()) {
+            throw RuntimeException("Extraction failed: bash not found (processed $entryCount entries)")
         }
     }
 
     /**
      * Configure rootfs for proot compatibility.
-     * Fixes apt sandboxing, dpkg, and Android UID mapping.
+     * Based on stableclaw_android's configureRootfs() - comprehensive.
      */
     private fun configureRootfs() {
         val rootfsDir = processManager.getRootfsDir()
 
-        // 1. Disable apt sandboxing (proot can't intercept setresuid)
-        val aptConfDir = "$rootfsDir/etc/apt/apt.conf.d"
-        File(aptConfDir).mkdirs()
-        File("$aptConfDir/01-phoneide-proot").writeText(
+        // 1. apt sandboxing fix
+        File("$rootfsDir/etc/apt/apt.conf.d").mkdirs()
+        File("$rootfsDir/etc/apt/apt.conf.d/01-phoneide-proot").writeText(
             "APT::Sandbox::User \"root\";\n" +
             "Dpkg::Use-Pty \"0\";\n" +
             "Dpkg::Options { \"--force-confnew\"; \"--force-overwrite\"; };\n"
         )
 
-        // 2. Configure dpkg for proot compatibility
-        val dpkgConfDir = "$rootfsDir/etc/dpkg/dpkg.cfg.d"
-        File(dpkgConfDir).mkdirs()
-        File("$dpkgConfDir/01-phoneide-proot").writeText(
-            "force-unsafe-io\n" +
-            "no-debsig\n" +
-            "force-overwrite\n" +
-            "force-depends\n"
+        // 2. dpkg config
+        File("$rootfsDir/etc/dpkg/dpkg.cfg.d").mkdirs()
+        File("$rootfsDir/etc/dpkg/dpkg.cfg.d/01-phoneide-proot").writeText(
+            "force-unsafe-io\nno-debsig\nforce-overwrite\nforce-depends\nforce-statoverride-add\n"
         )
 
-        // 3. Register Android UID in rootfs passwd/group (matching proot-distro)
-        try {
-            val uid = android.os.Process.myUid()
-            val gid = uid // Typically same on Android
+        // 3. Clear stale stat-overrides
+        val statOverride = File("$rootfsDir/var/lib/dpkg/statoverride")
+        if (statOverride.exists()) statOverride.writeText("")
 
-            val passwdFile = File("$rootfsDir/etc/passwd")
-            if (passwdFile.exists()) {
-                val passwd = passwdFile.readText()
-                if (!passwd.contains("aid_android")) {
-                    passwdFile.appendText(
-                        "\naid_android:x:$uid:$gid:Android:/:/sbin/nologin\n"
-                    )
-                }
-            }
+        // 4. Pre-create all directories that tools need at runtime
+        // (mkdir syscall broken in proot on Android 10+)
+        listOf(
+            "$rootfsDir/etc/ssl/certs",
+            "$rootfsDir/usr/share/keyrings",
+            "$rootfsDir/etc/apt/sources.list.d",
+            "$rootfsDir/var/lib/dpkg/updates",
+            "$rootfsDir/var/lib/dpkg/triggers",
+            "$rootfsDir/var/cache/apt/archives/partial",
+            "$rootfsDir/tmp",
+            "$rootfsDir/var/tmp",
+            "$rootfsDir/run",
+            "$rootfsDir/run/lock",
+            "$rootfsDir/dev/shm",
+            "$rootfsDir/root",
+        ).forEach { File(it).mkdirs() }
 
-            val groupFile = File("$rootfsDir/etc/group")
-            if (groupFile.exists()) {
-                val group = groupFile.readText()
-                if (!group.contains("aid_android")) {
-                    groupFile.appendText(
-                        "\naid_android:x:$gid:\n"
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to register Android UID: ${e.message}")
+        // 5. /etc/machine-id (dpkg triggers need it)
+        val machineId = File("$rootfsDir/etc/machine-id")
+        if (!machineId.exists()) {
+            machineId.parentFile?.mkdirs()
+            machineId.writeText("10000000000000000000000000000000\n")
         }
 
-        // 4. Fix /etc/hostname
+        // 6. policy-rc.d - prevent services from auto-starting
+        val policyRc = File("$rootfsDir/usr/sbin/policy-rc.d")
+        policyRc.parentFile?.mkdirs()
+        policyRc.writeText("#!/bin/sh\nexit 101\n")
+        policyRc.setExecutable(true, false)
+
+        // 7. Register Android users
+        registerAndroidUsers()
+
+        // 8. /etc/hosts
+        val hosts = File("$rootfsDir/etc/hosts")
+        if (!hosts.exists() || !hosts.readText().contains("localhost")) {
+            hosts.writeText(
+                "127.0.0.1   localhost.localdomain localhost\n" +
+                "::1         localhost.localdomain localhost ip6-localhost\n"
+            )
+        }
+
+        // 9. /etc/hostname
         File("$rootfsDir/etc/hostname").writeText("phoneide\n")
 
-        // 5. Ensure /tmp exists
-        File("$rootfsDir/tmp").mkdirs()
+        // 10. /tmp permissions
+        File("$rootfsDir/tmp").let {
+            it.mkdirs()
+            it.setReadable(true, false)
+            it.setWritable(true, false)
+            it.setExecutable(true, false)
+        }
+
+        // 11. Fix ALL bin/sbin permissions (CRITICAL - dpkg error 100 = "Could not exec dpkg")
+        fixBinPermissions()
+    }
+
+    private fun registerAndroidUsers() {
+        val rootfsDir = processManager.getRootfsDir()
+        val uid = android.os.Process.myUid()
+        val gid = uid
+
+        for (name in listOf("passwd", "shadow", "group", "gshadow")) {
+            File("$rootfsDir/etc/$name")?.let { if (it.exists()) it.setWritable(true, false) }
+        }
+
+        File("$rootfsDir/etc/passwd")?.let { f ->
+            if (f.exists() && !f.readText().contains("aid_android")) {
+                f.appendText("aid_android:x:$uid:$gid:Android:/:/sbin/nologin\n")
+            }
+        }
+        File("$rootfsDir/etc/shadow")?.let { f ->
+            if (f.exists() && !f.readText().contains("aid_android")) {
+                f.appendText("aid_android:*:18446:0:99999:7:::\n")
+            }
+        }
+        File("$rootfsDir/etc/group")?.let { f ->
+            if (f.exists()) {
+                val content = f.readText()
+                for ((name, id) in mapOf("aid_inet" to 3003, "aid_net_raw" to 3004, "aid_sdcard_rw" to 1015, "aid_android" to gid)) {
+                    if (!content.contains(name)) f.appendText("$name:x:$id:root,aid_android\n")
+                }
+            }
+        }
+        File("$rootfsDir/etc/gshadow")?.let { f ->
+            if (f.exists()) {
+                val content = f.readText()
+                for (name in listOf("aid_inet", "aid_net_raw", "aid_sdcard_rw", "aid_android")) {
+                    if (!content.contains(name)) f.appendText("$name:*::root,aid_android\n")
+                }
+            }
+        }
     }
 
     /**
-     * Install Python, Flask, and other dependencies inside proot.
-     * Non-fatal: logs warnings but does not throw exceptions.
+     * Fix executable permissions on all files in bin/sbin/lib directories.
+     * Java extraction doesn't preserve all permission bits - this is CRITICAL.
+     * dpkg error 100 = "Could not exec dpkg" = permission issue.
+     */
+    private fun fixBinPermissions() {
+        val rootfsDir = processManager.getRootfsDir()
+        val execDirs = listOf(
+            "$rootfsDir/usr/bin", "$rootfsDir/usr/sbin",
+            "$rootfsDir/usr/local/bin", "$rootfsDir/usr/local/sbin",
+            "$rootfsDir/usr/lib/apt/methods", "$rootfsDir/usr/lib/dpkg",
+            "$rootfsDir/usr/libexec",
+            "$rootfsDir/var/lib/dpkg/info",
+            "$rootfsDir/bin", "$rootfsDir/sbin",
+        )
+        for (dirPath in execDirs) {
+            val dir = File(dirPath)
+            if (dir.exists() && dir.isDirectory) fixExecRecursive(dir)
+        }
+        // Fix shared libs
+        for (libPath in listOf("$rootfsDir/usr/lib", "$rootfsDir/lib")) {
+            val dir = File(libPath)
+            if (dir.exists() && dir.isDirectory) {
+                dir.listFiles()?.forEach { f ->
+                    if (f.isDirectory) fixSharedLibsRecursive(f)
+                    else if (f.name.endsWith(".so") || f.name.contains(".so.")) {
+                        f.setReadable(true, false); f.setExecutable(true, false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun fixExecRecursive(dir: File) {
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory) fixExecRecursive(f)
+            else if (f.isFile) { f.setReadable(true, false); f.setExecutable(true, false) }
+        }
+    }
+
+    private fun fixSharedLibsRecursive(dir: File) {
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory) fixSharedLibsRecursive(f)
+            else if (f.name.endsWith(".so") || f.name.contains(".so.")) {
+                f.setReadable(true, false); f.setExecutable(true, false)
+            }
+        }
+    }
+
+    /**
+     * Install Python and Flask (non-fatal).
+     * Split into steps for better error diagnostics.
      */
     private fun installDependencies() {
         try {
-            // Step 1: Quick test that proot + rootfs actually works
-            val testResult = processManager.runInProot(
-                "echo 'proot OK' && cat /etc/os-release | head -1",
-                timeoutMs = 30_000
-            )
-            if (!testResult.success) {
-                Log.e(TAG, "Proot test failed: ${testResult.stdout}")
-                reportProgress(-1, "Proot 测试失败: ${testResult.stdout.take(200)}")
-                // Don't return - try apt anyway
+            // Quick proot test
+            val test = processManager.runInProot("echo OK && cat /etc/os-release | head -1", 30_000)
+            if (!test.success) {
+                Log.e(TAG, "Proot test failed: ${test.stdout}")
+                reportProgress(-1, "Proot test failed: ${test.stdout.take(200)}")
             } else {
-                Log.d(TAG, "Proot test OK: ${testResult.stdout.trim()}")
+                Log.d(TAG, "Proot test: ${test.stdout.trim()}")
             }
 
-            // Step 2: apt-get update
-            val updateResult = processManager.runInProot(
-                "apt-get update 2>&1",
-                timeoutMs = 120_000
+            // apt-get update
+            val upd = processManager.runInProot("apt-get update 2>&1", 120_000)
+            Log.d(TAG, "apt update: ${upd.exitCode}")
+            if (!upd.success) Log.w(TAG, "apt update stderr: ${upd.stdout.take(300)}")
+
+            // apt-get install python3
+            val inst = processManager.runInProot(
+                "apt-get install -y --no-install-recommends python3 python3-pip 2>&1",
+                600_000
             )
-            Log.d(TAG, "apt-get update: success=${updateResult.success}, exit=${updateResult.exitCode}")
-            if (!updateResult.success) {
-                Log.w(TAG, "apt-get update failed (non-fatal): ${updateResult.stdout.take(300)}")
-            }
+            Log.d(TAG, "apt install: ${inst.exitCode}")
 
-            // Step 3: apt-get install python3
-            val installResult = processManager.runInProot(
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip 2>&1",
-                timeoutMs = 600_000
-            )
-            Log.d(TAG, "apt-get install result: success=${installResult.success}, exit=${installResult.exitCode}")
-            if (installResult.stdout.isNotEmpty()) {
-                Log.d(TAG, "apt stdout: ${installResult.stdout.take(500)}")
-            }
-
-            // Step 4: Install Flask
-            val pipResult = processManager.runInProot(
+            // pip install flask
+            val pip = processManager.runInProot(
                 "pip3 install --break-system-packages flask flask-cors 2>&1 || pip3 install flask flask-cors 2>&1",
-                timeoutMs = 300_000
+                300_000
             )
-            Log.d(TAG, "pip install result: success=${pipResult.success}")
-            if (pipResult.stdout.isNotEmpty()) {
-                Log.d(TAG, "pip stdout: ${pipResult.stdout.take(300)}")
-            }
+            Log.d(TAG, "pip: ${pip.exitCode}")
         } catch (e: Exception) {
-            Log.e(TAG, "installDependencies failed (non-fatal): ${e.message}")
-            reportProgress(-1, "依赖安装失败(非致命): ${e.message}")
+            Log.e(TAG, "installDependencies non-fatal: ${e.message}")
         }
     }
 
-    /**
-     * Copy IDE files from APK assets into the rootfs.
-     * First extracts from assets/ide/ to hostIdeDir, then copies into rootfs.
-     */
     private fun setupIDEFiles() {
         val hostIdeDir = processManager.getIdeDir()
         val rootIdeDir = "${processManager.getRootfsDir()}/root/phoneide"
 
-        // Step 1: Extract IDE files from APK assets to host directory
         val hostDir = File(hostIdeDir)
         if (!hostDir.exists() || hostDir.listFiles()?.isEmpty() != false) {
             hostDir.mkdirs()
             extractAssetsDir("ide", hostDir)
-            Log.d(TAG, "Extracted IDE files from assets to $hostIdeDir")
         }
 
-        // Step 2: Copy into rootfs (proot bind mount target)
         File(rootIdeDir).mkdirs()
         copyDirectory(hostDir, File(rootIdeDir))
-        Log.d(TAG, "IDE files copied to $rootIdeDir")
 
-        // Step 3: Verify key files exist
-        val serverPy = File("$rootIdeDir/server.py")
-        val indexHtml = File("$rootIdeDir/static/index.html")
-        if (serverPy.exists() && indexHtml.exists()) {
-            Log.d(TAG, "IDE files verified: server.py + index.html OK")
-        } else {
-            Log.w(TAG, "IDE files incomplete! server.py=${serverPy.exists()}, index.html=${indexHtml.exists()}")
-        }
+        val ok = File("$rootIdeDir/server.py").exists() && File("$rootIdeDir/static/index.html").exists()
+        Log.d(TAG, "IDE files: ${if (ok) "OK" else "INCOMPLETE"}")
     }
 
-    /**
-     * Recursively extract a directory from APK assets to the filesystem.
-     */
     private fun extractAssetsDir(assetPath: String, targetDir: File) {
-        val assetManager = context.assets
-        val files = assetManager.list(assetPath) ?: return
-
-        for (file in files) {
-            val fullAssetPath = "$assetPath/$file"
-            val targetFile = File(targetDir, file)
-
-            // Check if it's a directory or file by trying to list it
-            val subFiles = try { assetManager.list(fullAssetPath) } catch (e: Exception) { null }
-
-            if (subFiles != null && subFiles.isNotEmpty()) {
-                // It's a directory
-                targetFile.mkdirs()
-                extractAssetsDir(fullAssetPath, targetFile)
+        val entries = context.assets.list(assetPath) ?: return
+        for (entry in entries) {
+            val fullPath = "$assetPath/$entry"
+            val target = File(targetDir, entry)
+            val subs = try { context.assets.list(fullPath) } catch (_: Exception) { null }
+            if (subs != null && subs.isNotEmpty()) {
+                target.mkdirs()
+                extractAssetsDir(fullPath, target)
             } else {
-                // It's a file - copy it
-                targetFile.parentFile?.mkdirs()
+                target.parentFile?.mkdirs()
                 try {
-                    assetManager.open(fullAssetPath).use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            val buffer = ByteArray(8192)
-                            var len: Int
-                            while (input.read(buffer).also { len = it } != -1) {
-                                output.write(buffer, 0, len)
-                            }
+                    context.assets.open(fullPath).use { input ->
+                        target.outputStream().use { output ->
+                            val buf = ByteArray(8192)
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) output.write(buf, 0, n)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to extract asset $fullAssetPath: ${e.message}")
+                    Log.w(TAG, "Asset extract failed: $fullPath - ${e.message}")
                 }
             }
         }
@@ -507,13 +535,21 @@ class BootstrapManager(
     private fun copyDirectory(source: File, target: File) {
         if (!source.exists()) return
         target.mkdirs()
-        source.listFiles()?.forEach { file ->
-            val targetFile = File(target, file.name)
-            if (file.isDirectory) {
-                copyDirectory(file, targetFile)
-            } else {
-                file.copyTo(targetFile, overwrite = true)
-            }
+        source.listFiles()?.forEach { f ->
+            val dest = File(target, f.name)
+            if (f.isDirectory) copyDirectory(f, dest)
+            else f.copyTo(dest, overwrite = true)
         }
+    }
+
+    private fun deleteRecursively(file: File) {
+        try {
+            if (!file.canonicalPath.startsWith(processManager.getRootfsDir())) return
+        } catch (_: Exception) { return }
+        try {
+            if (java.nio.file.Files.isSymbolicLink(file.toPath())) { file.delete(); return }
+        } catch (_: Exception) {}
+        if (file.isDirectory) file.listFiles()?.forEach { deleteRecursively(it) }
+        file.delete()
     }
 }
