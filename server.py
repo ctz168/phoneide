@@ -1046,6 +1046,8 @@ def replace_in_files():
 import urllib.request
 import urllib.error
 import collections
+import zipfile
+import tempfile
 
 # ==================== Agent Engine ====================
 SERVER_START_TIME = time.time()
@@ -2654,71 +2656,144 @@ def update_check():
     except Exception as e:
         return jsonify({'error': str(e), 'update_available': False, 'current_version': APP_VERSION})
 
+def _download_zip_update():
+    """Download latest code as zip from GitHub and extract over SERVER_DIR.
+
+    This method uses urllib (same as update_check which already works) instead
+    of git, to avoid git networking issues inside proot environments.
+    """
+    # Download zip archive of the main branch
+    zip_url = f'https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip'
+    _log_write(f'[UPDATE] Downloading zip from {zip_url}')
+
+    req = urllib.request.Request(zip_url, headers={
+        'User-Agent': 'PhoneIDE-Server',
+        'Accept': 'application/octet-stream',
+    })
+    # Add token if available (for private repos / higher rate limit)
+    token = _get_git_token()
+    if token:
+        req.add_header('Authorization', f'token {token}')
+
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        zip_data = resp.read()
+
+    if len(zip_data) < 1000:
+        raise RuntimeError(f'Downloaded zip too small ({len(zip_data)} bytes), likely an error')
+
+    # Extract zip to a temp directory, then copy files over
+    tmpdir = tempfile.mkdtemp(prefix='phoneide_update_')
+    zip_path = os.path.join(tmpdir, 'update.zip')
+    with open(zip_path, 'wb') as f:
+        f.write(zip_data)
+
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            zf.extractall(tmpdir)
+
+        # Find the extracted root folder (github archives create a folder like phoneide-main/)
+        extracted_dirs = [d for d in os.listdir(tmpdir) if os.path.isdir(os.path.join(tmpdir, d)) and d != '__MACOSX']
+        if not extracted_dirs:
+            raise RuntimeError('No extracted directory found in zip')
+        src_dir = os.path.join(tmpdir, extracted_dirs[0])
+
+        # Copy all files from extracted dir to SERVER_DIR, overwriting existing
+        copied = 0
+        for item in os.listdir(src_dir):
+            s = os.path.join(src_dir, item)
+            d = os.path.join(SERVER_DIR, item)
+            if os.path.isdir(s):
+                if os.path.exists(d):
+                    shutil.rmtree(d)
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+            copied += 1
+
+        _log_write(f'[UPDATE] Zip extraction complete, {copied} items copied')
+        return copied
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _restart_server():
+    """Create restart marker and spawn a new server process."""
+    marker = os.path.join(CONFIG_DIR, 'restart_marker.json')
+    with open(marker, 'w') as f:
+        json.dump({'pid': os.getpid(), 'reason': 'update', 'time': datetime.now().isoformat()}, f)
+
+    env = os.environ.copy()
+    env['PHONEIDE_WORKSPACE'] = load_config().get('workspace', WORKSPACE)
+    env['PHONEIDE_PORT'] = str(PORT)
+    env['PHONEIDE_HOST'] = HOST
+
+    server_script = os.path.join(SERVER_DIR, 'server.py')
+    subprocess.Popen(
+        [sys.executable, server_script],
+        env=env,
+        stdout=open(os.path.join(CONFIG_DIR, 'server.log'), 'a'),
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    def _exit():
+        time.sleep(0.5)
+        os._exit(0)
+    threading.Thread(target=_exit, daemon=True).start()
+
+
 @app.route('/api/update/apply', methods=['POST'])
 @handle_error
 def update_apply():
-    """Fetch latest code from GitHub and restart server."""
-    try:
-        # Check if SERVER_DIR is a git repo
-        git_dir = os.path.join(SERVER_DIR, '.git')
-        if not os.path.exists(git_dir):
-            return jsonify({'error': 'Not a git repository: ' + SERVER_DIR}), 400
+    """Fetch latest code from GitHub and restart server.
 
-        # Ensure SERVER_DIR and .git are writable
+    Strategy: try git pull first (fast, preserves .git), fall back to
+    zip download (uses urllib which is proven to work in proot).
+    """
+    try:
+        # Ensure SERVER_DIR is writable
         try:
             subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}', shell=True, capture_output=True, timeout=15)
         except Exception:
             pass
 
-        # Step 1: fetch remote refs
-        fetch_result = git_cmd('fetch -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=120)
-        if not fetch_result['ok']:
-            detail = fetch_result['stderr'] or fetch_result['stdout'] or 'unknown'
-            # If fetch failed, try with explicit env var
-            fetch_result2 = subprocess.run(
-                f'git -C {shlex_quote(SERVER_DIR)} -c http.sslVerify=false -c http.proxy= fetch origin main',
-                shell=True, capture_output=True, text=True, timeout=120
-            )
-            if fetch_result2.returncode != 0:
-                detail2 = fetch_result2.stderr or fetch_result2.stdout or 'unknown'
-                return jsonify({'error': f'Git fetch failed: {detail}', 'detail2': detail2}), 500
+        update_method = ''
+        detail = ''
 
-        # Step 2: reset local to match remote (no merge conflicts)
-        reset_result = git_cmd('reset --hard origin/main', cwd=SERVER_DIR, timeout=30)
-        if not reset_result['ok']:
-            detail = reset_result['stderr'] or reset_result['stdout'] or 'unknown'
-            return jsonify({'error': f'Git reset failed: {detail}'}), 500
+        # ── Method 1: git pull ──
+        git_dir = os.path.join(SERVER_DIR, '.git')
+        if os.path.exists(git_dir):
+            try:
+                fetch_result = git_cmd('fetch -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=90)
+                if fetch_result['ok']:
+                    reset_result = git_cmd('reset --hard origin/main', cwd=SERVER_DIR, timeout=30)
+                    if reset_result['ok']:
+                        update_method = 'git'
+                        detail = reset_result['stdout'][:300]
+            except Exception as e:
+                _log_write(f'[UPDATE] git pull failed: {e}, falling back to zip')
 
-        _log_write(f'[UPDATE] Fetched and reset to origin/main: {reset_result["stdout"][:200]}')
+        # ── Method 2: zip download (fallback) ──
+        if not update_method:
+            try:
+                copied = _download_zip_update()
+                update_method = 'zip'
+                detail = f'Downloaded and extracted {copied} items via zip'
+            except Exception as e:
+                return jsonify({
+                    'error': f'Update failed (both git and zip methods failed). '
+                             f'Zip error: {e}',
+                    'method': 'none',
+                }), 500
 
-        # Restart server
-        marker = os.path.join(CONFIG_DIR, 'restart_marker.json')
-        with open(marker, 'w') as f:
-            json.dump({'pid': os.getpid(), 'reason': 'update', 'time': datetime.now().isoformat()}, f)
-
-        env = os.environ.copy()
-        env['PHONEIDE_WORKSPACE'] = load_config().get('workspace', WORKSPACE)
-        env['PHONEIDE_PORT'] = str(PORT)
-        env['PHONEIDE_HOST'] = HOST
-
-        server_script = os.path.join(SERVER_DIR, 'server.py')
-        subprocess.Popen(
-            [sys.executable, server_script],
-            env=env,
-            stdout=open(os.path.join(CONFIG_DIR, 'server.log'), 'a'),
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-
-        def _exit():
-            time.sleep(0.5)
-            os._exit(0)
-        threading.Thread(target=_exit, daemon=True).start()
+        _log_write(f'[UPDATE] Success via {update_method}: {detail}')
+        _restart_server()
 
         return jsonify({
             'ok': True,
-            'message': 'Update applied, server restarting...',
-            'pull_output': reset_result['stdout'][:500],
+            'message': f'Update applied ({update_method}), server restarting...',
+            'method': update_method,
+            'detail': detail,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

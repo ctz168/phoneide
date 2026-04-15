@@ -1113,15 +1113,23 @@ const AppManager = (() => {
             const resp = await fetch('/api/update/apply', { method: 'POST' });
             if (!resp.ok) {
                 const errText = await resp.text().catch(() => 'Unknown error');
-                throw new Error(errText);
+                // Try to extract error message from JSON
+                try {
+                    const errJson = JSON.parse(errText);
+                    throw new Error(errJson.error || errText);
+                } catch (parseErr) {
+                    if (parseErr.message !== errText) throw parseErr;
+                    throw new Error(errText);
+                }
             }
 
             const data = await resp.json();
+            const method = data.method || 'unknown';
 
             if (progressEl) progressEl.style.width = '100%';
-            statusEl.innerHTML = 'Update applied! The page will reload in a few seconds...';
+            statusEl.innerHTML = `✅ Update applied (${method})! The page will reload in a few seconds...`;
 
-            showToast('Update applied, reloading...', 'success', 3000);
+            showToast(`Update applied via ${method}, reloading...`, 'success', 3000);
 
             // Reload page after delay
             setTimeout(() => {
@@ -1129,9 +1137,9 @@ const AppManager = (() => {
             }, 3000);
 
         } catch (err) {
-            statusEl.textContent = 'Update failed: ' + err.message;
+            statusEl.textContent = '❌ Update failed: ' + err.message;
             if (progressEl) progressEl.style.width = '0%';
-            showToast('Update failed: ' + err.message, 'error', 3000);
+            showToast('Update failed: ' + err.message, 'error', 5000);
         } finally {
             if (applyBtn) applyBtn.disabled = false;
             if (checkBtn) checkBtn.disabled = false;
