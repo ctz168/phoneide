@@ -1028,7 +1028,7 @@ const AppManager = (() => {
 
         // Show dialog
         overlay.classList.remove('hidden');
-        if (statusEl) statusEl.textContent = 'Checking for updates...';
+        if (statusEl) statusEl.textContent = '正在检查更新...';
         if (infoEl) { infoEl.classList.add('hidden'); infoEl.textContent = ''; }
         if (applyBtn) applyBtn.classList.add('hidden');
         if (checkBtn) checkBtn.disabled = true;
@@ -1057,7 +1057,7 @@ const AppManager = (() => {
 
             // Show current version
             if (versionEl) {
-                versionEl.textContent = 'Current version: ' + (data.current_version || 'unknown');
+                versionEl.textContent = '当前版本: ' + (data.current_version || 'unknown') + '  本地 commit: ' + (data.local_sha || 'unknown');
             }
 
             if (data.update_available) {
@@ -1070,7 +1070,7 @@ const AppManager = (() => {
                     if (data.release_body) info += '\n' + data.release_body + '\n';
                     // Show "Update Now" button for APK install
                     if (applyBtn) {
-                        applyBtn.textContent = 'Download & Install APK';
+                        applyBtn.textContent = '下载安装 APK';
                         applyBtn.classList.remove('hidden');
                         applyBtn.dataset.apkUrl = data.apk_url || '';
                         applyBtn.dataset.version = data.new_version || data.latest_tag || '';
@@ -1087,13 +1087,13 @@ const AppManager = (() => {
                         applyBtn.dataset.version = '';
                     }
                 }
-                if (statusEl) statusEl.textContent = 'Update available!';
+                if (statusEl) statusEl.textContent = '有可用更新！';
                 if (infoEl && info) {
                     infoEl.textContent = info;
                     infoEl.classList.remove('hidden');
                 }
             } else {
-                if (statusEl) statusEl.textContent = 'You are up to date!';
+                if (statusEl) statusEl.textContent = '代码已是最新';
                 if (versionEl) {
                     versionEl.textContent = 'Current version: ' + (data.current_version || data.latest_tag || 'latest');
                 }
@@ -1121,21 +1121,29 @@ const AppManager = (() => {
         const version = applyBtn.dataset.version;
 
         // If APK URL is available, trigger native APK download and install
-        if (apkUrl && version && typeof window.AndroidBridge !== 'undefined') {
-            if (applyBtn) applyBtn.disabled = true;
-            if (checkBtn) checkBtn.disabled = true;
+        if (apkUrl && version) {
+            if (typeof window.UpdateBridge !== 'undefined') {
+                // Native bridge: download and install via Android
+                if (applyBtn) applyBtn.disabled = true;
+                if (checkBtn) checkBtn.disabled = true;
 
-            try {
-                statusEl.textContent = 'Triggering APK download...';
-                window.AndroidBridge.downloadAndInstallApk(apkUrl, version);
-                statusEl.textContent = 'APK download started. Follow the installation prompt.';
-            } catch (err) {
-                statusEl.textContent = 'Error: ' + err.message;
-            } finally {
-                if (applyBtn) applyBtn.disabled = false;
-                if (checkBtn) checkBtn.disabled = false;
+                try {
+                    statusEl.textContent = '正在下载 APK...';
+                    window.UpdateBridge.downloadAndInstallApk(apkUrl, version);
+                    statusEl.textContent = 'APK 下载已开始，请按提示安装。';
+                } catch (err) {
+                    statusEl.textContent = '下载出错: ' + err.message;
+                } finally {
+                    if (applyBtn) applyBtn.disabled = false;
+                    if (checkBtn) checkBtn.disabled = false;
+                }
+                return;
+            } else {
+                // Fallback: open APK URL in browser for manual download
+                statusEl.textContent = '正在打开下载页面...';
+                window.open(apkUrl, '_blank');
+                return;
             }
-            return;
         }
 
         // Fallback: server-side git pull + restart (for code-only updates)

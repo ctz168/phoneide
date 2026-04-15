@@ -240,6 +240,7 @@ class MainActivity : AppCompatActivity() {
 
         // Add JavascriptInterface for native bridge
         webView.addJavascriptInterface(NativeBridge(), "AndroidBridge")
+        webView.addJavascriptInterface(UpdateBridge(), "UpdateBridge")
     }
 
     // ========================
