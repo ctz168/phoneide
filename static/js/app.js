@@ -413,31 +413,40 @@ const AppManager = (() => {
         if (searchBtn) {
             searchBtn.addEventListener('click', () => {
                 if (window.EditorManager) {
-                    const q = searchInput.value;
-                    if (q) {
-                        EditorManager.search(q);
-                    } else {
-                        searchInput.style.display = searchInput.style.display === 'none' ? '' : 'none';
-                        if (searchInput.style.display !== 'none') {
-                            searchInput.focus();
-                        }
-                    }
+                    // Directly open CodeMirror's built-in find dialog
+                    EditorManager.search();
                 }
             });
         }
 
-        // Keyboard shortcuts in search
+        // Keyboard shortcut in search input - trigger CodeMirror find
         if (searchInput) {
             searchInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
-                    if (window.EditorManager) EditorManager.search(searchInput.value);
+                    e.preventDefault();
+                    const q = searchInput.value.trim();
+                    if (q && window.EditorManager) {
+                        EditorManager.search(q);
+                    }
                 }
                 if (e.key === 'Escape') {
                     searchInput.style.display = 'none';
                     searchInput.value = '';
+                    replaceInput.style.display = 'none';
+                    replaceInput.value = '';
                 }
             });
         }
+
+        // Ctrl+F shortcut - focus custom search input or open CM dialog
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                if (window.EditorManager) {
+                    EditorManager.search();
+                }
+            }
+        });
     }
 
     // ── Toolbar Buttons ──

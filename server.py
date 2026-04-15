@@ -940,7 +940,7 @@ def search_files():
     data = request.json
     query = data.get('query', '')
     pattern = data.get('pattern', '')
-    file_pattern = data.get('file_pattern', '*')
+    file_pattern = data.get('file_pattern') or '*'
     case_sensitive = data.get('case_sensitive', False)
     use_regex = data.get('use_regex', False)
     max_results = data.get('max_results', 500)
@@ -972,7 +972,7 @@ def search_files():
                 if len(results) >= max_results:
                     break
                 # Filter by file pattern
-                if file_pattern != '*' and not fnmatch.fnmatch(fname, file_pattern):
+                if file_pattern != '*' and not _fnmatch.fnmatch(fname, file_pattern):
                     continue
                 fpath = os.path.join(root, fname)
                 try:
@@ -995,8 +995,6 @@ def search_files():
         return jsonify({'error': f'Invalid regex: {str(e)}'}), 400
 
     return jsonify({'results': results, 'total': len(results)})
-
-import fnmatch
 
 @app.route('/api/search/replace', methods=['POST'])
 @handle_error
@@ -1046,7 +1044,7 @@ def replace_in_files():
 import urllib.request
 import urllib.error
 import collections
-import zipfile
+import fnmatch as _fnmatch
 import tempfile
 
 # ==================== Agent Engine ====================

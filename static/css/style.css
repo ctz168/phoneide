@@ -190,6 +190,11 @@ html, body {
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
+#sidebar-right-header > div {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
 
 #sidebar-left-header h3,
 #sidebar-right-header h3 {
@@ -1290,43 +1295,70 @@ button, .file-item, .search-result-item, .git-change-item {
     --border-light: #C4B5A0;
 }
 
+[data-theme="claude"] .cm-s-dracula.CodeMirror,
 [data-theme="claude"] .CodeMirror {
     background: #FAF9F6 !important;
     color: #2D2319 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-gutters,
 [data-theme="claude"] .CodeMirror-gutters {
     background: #F5F0E8 !important;
-    border-right-color: #D4C5B0 !important;
+    border-right: 1px solid #D4C5B0 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-linenumber,
 [data-theme="claude"] .CodeMirror-linenumber {
     color: #8B7355 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-activeline-background,
 [data-theme="claude"] .CodeMirror-activeline-background {
     background: rgba(212, 197, 176, 0.35) !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-cursor,
 [data-theme="claude"] .CodeMirror-cursor {
     border-left-color: #C4621A !important;
 }
+[data-theme="claude"] .cm-s-dracula div.CodeMirror-selected,
 [data-theme="claude"] .CodeMirror-selected {
     background: rgba(196, 98, 26, 0.15) !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-matchingbracket,
 [data-theme="claude"] .CodeMirror-matchingbracket {
     color: #2D7D46 !important;
     background: rgba(45, 125, 70, 0.15) !important;
     border-bottom-color: #2D7D46 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-dialog,
 [data-theme="claude"] .CodeMirror-dialog {
     background: #FFFFFF !important;
     color: #2D2319 !important;
     border-bottom-color: #D4C5B0 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-dialog input,
 [data-theme="claude"] .CodeMirror-dialog input {
     background: #FAF9F6 !important;
     color: #2D2319 !important;
     border-color: #D4C5B0 !important;
 }
+[data-theme="claude"] .cm-s-dracula .CodeMirror-scroll,
+[data-theme="claude"] .CodeMirror-scroll {
+    background: #FAF9F6 !important;
+}
+[data-theme="claude"] .cm-s-dracula .CodeMirror-foldgutter,
+[data-theme="claude"] .CodeMirror-foldgutter {
+    background: #F5F0E8 !important;
+}
+[data-theme="claude"] .cm-s-dracula .CodeMirror-foldgutter-open,
+[data-theme="claude"] .CodeMirror-foldgutter-open,
+[data-theme="claude"] .cm-s-dracula .CodeMirror-foldgutter-folded,
+[data-theme="claude"] .CodeMirror-foldgutter-folded {
+    color: #8B7355 !important;
+}
 /* Claude theme syntax highlighting */
-[data-theme="claude"] .cm-s-dracula .cm-keyword { color: #7C3AED; font-weight: bold; }
+[data-theme="claude"] .cm-s-dracula.CodeMirror,
+[data-theme="claude"] .CodeMirror {
+    background: #FAF9F6 !important;
+}
+[data-theme="claude"] .cm-s-dracula .cm-keyword { color: #7C3AED !important; font-weight: bold; }
 [data-theme="claude"] .cm-s-dracula .cm-atom { color: #C0392B; }
 [data-theme="claude"] .cm-s-dracula .cm-number { color: #B8860B; }
 [data-theme="claude"] .cm-s-dracula .cm-def { color: #2563EB; }
