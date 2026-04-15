@@ -1554,3 +1554,83 @@ button, .file-item, .search-result-item, .git-change-item {
 #process-manager .proc-stopped { color: var(--text-muted); }
 #process-manager button { padding: 3px 8px; border: 1px solid var(--red); background: none; color: var(--red); border-radius: 3px; font-size: 10px; cursor: pointer; }
 #process-manager button:active { background: var(--red); color: var(--bg-primary); }
+
+/* Shell Input Bar (inside output panel) */
+#shell-input-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    flex-shrink: 0;
+}
+#shell-prompt {
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    user-select: none;
+    min-width: 16px;
+}
+#shell-input {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 6px 8px;
+    outline: none;
+    min-width: 0;
+}
+#shell-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.15);
+}
+#shell-input::placeholder {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Terminal Extra Keys Bar (Termux-style) */
+#terminal-extra-keys {
+    display: flex;
+    gap: 3px;
+    padding: 4px 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+}
+#terminal-extra-keys::-webkit-scrollbar { display: none; }
+.tkey {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 32px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+    transition: background 0.1s, color 0.1s;
+}
+.tkey:active {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
+.tkey[data-key="ctrl"].active {
+    background: var(--accent);
+    color: var(--bg-primary);
+}

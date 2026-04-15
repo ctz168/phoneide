@@ -159,9 +159,9 @@ const FileManager = (() => {
      * Save the current file (overwrite)
      */
     async function saveFile() {
+        // If no file is open, treat as Save As
         if (!currentFilePath) {
-            showToast('No file open to save', 'warning');
-            return;
+            return saveAs();
         }
 
         let content = '';

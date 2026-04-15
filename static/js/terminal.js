@@ -670,6 +670,162 @@ const TerminalManager = (() => {
 
         // Initialize resize handle
         initResize();
+
+        // ── Shell Input Bar ──
+        initShellInput();
+
+        // ── Terminal Extra Keys ──
+        initExtraKeys();
+    }
+
+    // ── Shell Input Bar ──────────────────────────────────────────
+
+    let shellHistory = [];
+    let shellHistoryIndex = -1;
+
+    function initShellInput() {
+        const shellInput = document.getElementById('shell-input');
+        if (!shellInput) return;
+
+        shellInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const cmd = shellInput.value.trim();
+                if (!cmd) return;
+
+                // Add to history
+                shellHistory.push(cmd);
+                shellHistoryIndex = shellHistory.length;
+
+                // Show the command in output
+                appendOutput(`$ ${cmd}`, 'status');
+
+                // Execute via API
+                executeCode(cmd, 'bash');
+                shellInput.value = '';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (shellHistoryIndex > 0) {
+                    shellHistoryIndex--;
+                    shellInput.value = shellHistory[shellHistoryIndex] || '';
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (shellHistoryIndex < shellHistory.length - 1) {
+                    shellHistoryIndex++;
+                    shellInput.value = shellHistory[shellHistoryIndex] || '';
+                } else {
+                    shellHistoryIndex = shellHistory.length;
+                    shellInput.value = '';
+                }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                // Simple tab completion - not full, but inserts a tab character
+                const start = shellInput.selectionStart;
+                const end = shellInput.selectionEnd;
+                shellInput.value = shellInput.value.substring(0, start) + '\t' + shellInput.value.substring(end);
+                shellInput.selectionStart = shellInput.selectionEnd = start + 1;
+            } else if (e.key === 'c' && e.ctrlKey) {
+                e.preventDefault();
+                appendOutput('^C', 'status');
+                stop();
+            } else if (e.key === 'l' && e.ctrlKey) {
+                e.preventDefault();
+                clearOutput();
+            }
+        });
+
+        // Focus shell input when clicking on output area
+        const outputContent = document.getElementById('output-content');
+        if (outputContent) {
+            outputContent.addEventListener('click', () => {
+                shellInput.focus();
+            });
+        }
+    }
+
+    // ── Terminal Extra Keys ──────────────────────────────────────
+
+    let ctrlActive = false;
+
+    function initExtraKeys() {
+        const keysBar = document.getElementById('terminal-extra-keys');
+        if (!keysBar) return;
+
+        const keyMap = {
+            'esc': '\x1b',
+            'tab': '\t',
+            'up': '\x1b[A',
+            'down': '\x1b[B',
+            'left': '\x1b[D',
+            'right': '\x1b[C',
+            'home': '\x1b[H',
+            'end': '\x1b[F',
+            'pgup': '\x1b[5~',
+            'pgdn': '\x1b[6~',
+            'pipe': '|',
+            'slash': '/',
+            'tilde': '~',
+            'minus': '-',
+            'enter': '\r',
+        };
+
+        keysBar.querySelectorAll('.tkey').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const key = btn.dataset.key;
+                const shellInput = document.getElementById('shell-input');
+                if (!shellInput) return;
+
+                if (key === 'ctrl') {
+                    ctrlActive = !ctrlActive;
+                    btn.classList.toggle('active', ctrlActive);
+                    return;
+                }
+
+                // If CTRL is active and key is a single letter, send Ctrl+key
+                if (ctrlActive && key.length === 1 && key >= 'a' && key <= 'z') {
+                    // Insert the control character into the shell input
+                    const ctrlChar = String.fromCharCode(key.charCodeAt(0) - 96);
+                    const pos = shellInput.selectionStart;
+                    shellInput.value = shellInput.value.substring(0, pos) + ctrlChar + shellInput.value.substring(shellInput.selectionEnd);
+                    shellInput.selectionStart = shellInput.selectionEnd = pos + 1;
+                    ctrlActive = false;
+                    const ctrlBtn = keysBar.querySelector('[data-key="ctrl"]');
+                    if (ctrlBtn) ctrlBtn.classList.remove('active');
+                    return;
+                }
+
+                // For escape sequences that should trigger shell input behaviors
+                if (key === 'up' || key === 'down') {
+                    // Simulate arrow key for history navigation
+                    const event = new KeyboardEvent('keydown', {
+                        key: key === 'up' ? 'ArrowUp' : 'ArrowDown',
+                        bubbles: true
+                    });
+                    shellInput.dispatchEvent(event);
+                    return;
+                }
+
+                if (key === 'enter') {
+                    const event = new KeyboardEvent('keydown', {
+                        key: 'Enter',
+                        bubbles: true
+                    });
+                    shellInput.dispatchEvent(event);
+                    return;
+                }
+
+                // For other keys, insert the character
+                const char = keyMap[key];
+                if (char) {
+                    const pos = shellInput.selectionStart;
+                    shellInput.value = shellInput.value.substring(0, pos) + char + shellInput.value.substring(shellInput.selectionEnd);
+                    shellInput.selectionStart = shellInput.selectionEnd = pos + char.length;
+                    shellInput.focus();
+                }
+            });
+        });
     }
 
     // ── Initialize ─────────────────────────────────────────────────
