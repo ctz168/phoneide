@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
 import android.util.Log
@@ -13,6 +14,8 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.*
 import java.io.*
 import java.util.regex.Pattern
@@ -163,6 +166,18 @@ class TerminalActivity : AppCompatActivity() {
         baseLayout.addView(inputLine)
 
         terminalContainer.addView(baseLayout)
+
+        // Handle keyboard (IME) insets to keep input field visible above keyboard.
+        // On Android 11+ (targetSdk 30+), adjustResize dispatches WindowInsets
+        // instead of actually resizing the window, so we must handle them manually.
+        ViewCompat.setOnApplyWindowInsetsListener(terminalContainer) { _, insets ->
+            val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            // Also account for navigation bar on edge-to-edge devices
+            val navHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val bottomPadding = maxOf(imeHeight, navHeight)
+            baseLayout.setPadding(0, 0, 0, bottomPadding)
+            insets
+        }
     }
 
     private fun setupInputHandling() {
