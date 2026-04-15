@@ -76,23 +76,21 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug --no-daemon
 
-    - name: Build Release APK
+    - name: Generate signing keystore
       run: |
-        cd android
-        # Generate a debug keystore for CI release signing
         keytool -genkeypair \
-          -v -keystore ../release.keystore \
+          -v -keystore android/keystore.jks \
           -alias phoneide \
           -keyalg RSA -keysize 2048 \
           -validity 10000 \
           -storepass phoneide123 \
           -keypass phoneide123 \
           -dname "CN=PhoneIDE, OU=Dev, O=ctz168, L=Unknown, ST=Unknown, C=CN"
-        ./gradlew assembleRelease --no-daemon \
-          -Pandroid.injected.signing.store.file=../release.keystore \
-          -Pandroid.injected.signing.store.password=phoneide123 \
-          -Pandroid.injected.signing.key.alias=phoneide \
-          -Pandroid.injected.signing.key.password=phoneide123
+        printf 'storeFile=keystore.jks\nstorePassword=phoneide123\nkeyAlias=phoneide\nkeyPassword=phoneide123\n' > android/key.properties
+
+    - name: Build Release APK
+      working-directory: android
+      run: ./gradlew assembleRelease --no-daemon
 
     # Step 4: Prepare output
     - name: Prepare APK artifacts
