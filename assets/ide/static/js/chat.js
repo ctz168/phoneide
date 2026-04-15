@@ -1644,35 +1644,31 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
             .chat-mode-toggle {
                 display: flex;
                 align-items: center;
-                gap: 2px;
-                background: var(--bg-tertiary);
-                border-radius: 8px;
-                padding: 2px;
+                gap: 6px;
                 margin: 4px 0;
                 flex-shrink: 0;
-                border: 1px solid var(--border);
             }
-            .mode-btn {
-                padding: 4px 10px;
-                border: none;
-                background: none;
+            .mode-label {
                 color: var(--text-muted);
                 font-size: 11px;
                 font-weight: 500;
-                cursor: pointer;
-                border-radius: 6px;
-                transition: all 0.2s ease;
                 white-space: nowrap;
-                line-height: 1.3;
             }
-            .mode-btn:hover { color: var(--text-primary); }
-            .mode-btn:active { transform: scale(0.95); }
-            .mode-btn-active {
-                background: var(--accent);
-                color: var(--bg-primary);
-                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            .mode-select {
+                padding: 3px 8px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: var(--bg-tertiary);
+                color: var(--text-primary);
+                font-size: 11px;
+                font-weight: 500;
+                cursor: pointer;
+                outline: none;
+                transition: border-color 0.2s;
             }
-            .mode-btn-active:hover { color: var(--bg-primary); }
+            .mode-select:focus {
+                border-color: var(--accent);
+            }
 
             /* ── Plan Actions ── */
             .plan-actions {
@@ -1957,42 +1953,45 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
         const titleEl = header.querySelector('h3, .sidebar-title');
         if (!titleEl) return;
 
-        const toggle = document.createElement('div');
-        toggle.className = 'chat-mode-toggle';
-        toggle.id = 'chat-mode-toggle';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-mode-toggle';
+        wrapper.id = 'chat-mode-toggle';
 
-        const planBtn = document.createElement('button');
-        planBtn.className = 'mode-btn' + (chatMode === 'plan' ? ' mode-btn-active' : '');
-        planBtn.dataset.mode = 'plan';
-        planBtn.textContent = '📋 计划';
-        planBtn.addEventListener('click', () => {
-            chatMode = 'plan';
-            updateModeToggleUI();
+        const label = document.createElement('span');
+        label.className = 'mode-label';
+        label.textContent = '模式';
+
+        const select = document.createElement('select');
+        select.id = 'chat-mode-select';
+        select.className = 'mode-select';
+
+        const planOpt = document.createElement('option');
+        planOpt.value = 'plan';
+        planOpt.textContent = '📋 计划';
+        if (chatMode === 'plan') planOpt.selected = true;
+
+        const execOpt = document.createElement('option');
+        execOpt.value = 'execute';
+        execOpt.textContent = '⚡ 执行';
+        if (chatMode === 'execute') execOpt.selected = true;
+
+        select.appendChild(planOpt);
+        select.appendChild(execOpt);
+
+        select.addEventListener('change', () => {
+            chatMode = select.value;
         });
 
-        const execBtn = document.createElement('button');
-        execBtn.className = 'mode-btn' + (chatMode === 'execute' ? ' mode-btn-active' : '');
-        execBtn.dataset.mode = 'execute';
-        execBtn.textContent = '⚡ 执行';
-        execBtn.addEventListener('click', () => {
-            chatMode = 'execute';
-            updateModeToggleUI();
-        });
-
-        toggle.appendChild(planBtn);
-        toggle.appendChild(execBtn);
+        wrapper.appendChild(label);
+        wrapper.appendChild(select);
 
         // Insert after the title
-        titleEl.parentNode.insertBefore(toggle, titleEl.nextSibling);
+        titleEl.parentNode.insertBefore(wrapper, titleEl.nextSibling);
     }
 
     function updateModeToggleUI() {
-        const toggle = document.getElementById('chat-mode-toggle');
-        if (!toggle) return;
-        const btns = toggle.querySelectorAll('.mode-btn');
-        btns.forEach(btn => {
-            btn.classList.toggle('mode-btn-active', btn.dataset.mode === chatMode);
-        });
+        const select = document.getElementById('chat-mode-select');
+        if (select) select.value = chatMode;
     }
 
     // ── Initialize ─────────────────────────────────────────────────

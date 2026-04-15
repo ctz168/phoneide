@@ -1289,11 +1289,18 @@ const AppManager = (() => {
             }
         }, { passive: true });
 
-        // Prevent double-tap zoom
+        // Prevent double-tap zoom (only on main editor/scrollable areas, not buttons/inputs)
         let lastTouchEnd = 0;
         document.addEventListener('touchend', (e) => {
             const now = Date.now();
             if (now - lastTouchEnd <= 300) {
+                // Skip prevention on interactive UI elements
+                if (e.target.closest('button') || e.target.closest('input') ||
+                    e.target.closest('select') || e.target.closest('textarea') ||
+                    e.target.closest('.panel-toolbar') || e.target.closest('.tab') ||
+                    e.target.closest('.file-item') || e.target.closest('a')) {
+                    return;
+                }
                 e.preventDefault();
             }
             lastTouchEnd = now;

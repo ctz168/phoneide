@@ -50,7 +50,18 @@ def _parse_version(version_str):
 
 
 def _get_current_version():
-    """Try to read the current app version from build.gradle."""
+    """Read the current app version. Priority: version.txt > build.gradle > git describe."""
+    # 1. version.txt (written by CI build)
+    vtxt = os.path.join(SERVER_DIR, 'version.txt')
+    if os.path.exists(vtxt):
+        try:
+            with open(vtxt, 'r') as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        except Exception:
+            pass
+    # 2. build.gradle
     gradle_path = os.path.join(SERVER_DIR, 'android', 'app', 'build.gradle')
     if os.path.exists(gradle_path):
         try:
@@ -62,7 +73,7 @@ def _get_current_version():
                             return m.group(1)
         except Exception:
             pass
-    # Fallback: try reading from local git describe
+    # 3. git describe
     try:
         r = git_cmd('describe --tags --abbrev=0', cwd=SERVER_DIR)
         if r['ok'] and r['stdout'].strip():
@@ -134,6 +145,16 @@ def update_check():
                     local_sha = r['stdout'].strip()
             except Exception:
                 pass
+
+            # Fallback: read commit.txt (written by CI build)
+            if not local_sha:
+                ctxt = os.path.join(SERVER_DIR, 'commit.txt')
+                if os.path.exists(ctxt):
+                    try:
+                        with open(ctxt, 'r') as f:
+                            local_sha = f.read().strip()[:40]
+                    except Exception:
+                        pass
 
             # Get remote main SHA from FETCH_HEAD or origin/main
             try:
