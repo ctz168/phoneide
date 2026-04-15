@@ -25,3 +25,4 @@ dist/
 
 # IDE assets are generated during CI
 android/app/src/main/assets/
+build/
