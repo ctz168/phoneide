@@ -24,7 +24,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ar zstd
+        sudo apt-get install -y binutils zstd
 
     - name: Fetch proot binaries
       run: |
