@@ -2781,17 +2781,16 @@ def _restart_server():
 @app.route('/api/update/apply', methods=['POST'])
 @handle_error
 def update_apply():
-    """Fetch latest code from GitHub and restart server.
+    """Fetch latest code from GitHub via git pull and restart server.
 
-    Uses zip download as the primary method (urllib works reliably in proot).
-    Git pull is skipped entirely — it has networking issues in proot.
+    Uses git pull as the primary method. Shows full error diagnostics
+    including stderr, returncode, and environment info for debugging.
     """
     import traceback as tb
     diagnostics = {}
 
     try:
         # ── Pre-flight checks ──
-        # 1. Check SERVER_DIR exists and is accessible
         diagnostics['SERVER_DIR'] = SERVER_DIR
         diagnostics['SERVER_DIR_exists'] = os.path.exists(SERVER_DIR)
         diagnostics['SERVER_DIR_isdir'] = os.path.isdir(SERVER_DIR)
@@ -2802,7 +2801,7 @@ def update_apply():
                 'diagnostics': diagnostics,
             }), 500
 
-        # 2. Check write permission
+        # Check write permission on SERVER_DIR
         test_file = os.path.join(SERVER_DIR, '.write_test_' + str(os.getpid()))
         write_ok = False
         write_error = ''
@@ -2818,11 +2817,9 @@ def update_apply():
 
         if not write_ok:
             # Try chmod to fix
-            chmod_error = ''
             try:
                 subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}',
                                shell=True, capture_output=True, text=True, timeout=15)
-                # Retry write test
                 try:
                     with open(test_file, 'w') as f:
                         f.write('test')
@@ -2831,14 +2828,11 @@ def update_apply():
                     write_error = 'fixed by chmod'
                 except Exception as e2:
                     write_error += f'; chmod后仍然失败: {e2}'
-                    diagnostics['write_error'] = write_error
             except Exception as e:
-                chmod_error = f'{type(e).__name__}: {e}'
-                diagnostics['chmod_error'] = chmod_error
-
+                diagnostics['chmod_error'] = f'{type(e).__name__}: {e}'
         diagnostics['write_ok_after_fix'] = write_ok
 
-        # 3. Check /tmp write permission
+        # Check /tmp write permission
         tmp_test = os.path.join(tempfile.gettempdir(), '.write_test_' + str(os.getpid()))
         tmp_ok = False
         try:
@@ -2851,28 +2845,34 @@ def update_apply():
         diagnostics['tmp_writable'] = tmp_ok
         diagnostics['tmp_dir'] = tempfile.gettempdir()
 
-        # 4. Check disk space
+        # Check disk space
         try:
-            stat = os.statvfs(SERVER_DIR)
-            free_mb = (stat.f_bavail * stat.f_frsize) / (1024 * 1024)
-            diagnostics['disk_free_mb'] = round(free_mb, 1)
+            st = os.statvfs(SERVER_DIR)
+            diagnostics['disk_free_mb'] = round((st.f_bavail * st.f_frsize) / (1024 * 1024), 1)
         except Exception as e:
             diagnostics['disk_error'] = str(e)
 
-        # 5. Check network (quick test)
-        net_ok = False
-        net_error = ''
+        # Check git remote
         try:
-            req = urllib.request.Request(
-                f'https://api.github.com/repos/{GITHUB_REPO}/commits/main',
-                headers={'User-Agent': 'PhoneIDE-Server'},
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                net_ok = resp.status == 200
+            r = git_cmd('remote -v', cwd=SERVER_DIR)
+            diagnostics['git_remote'] = r['stdout'].strip()
+            diagnostics['git_remote_ok'] = r['ok']
         except Exception as e:
-            net_error = f'{type(e).__name__}: {e}'
-        diagnostics['network_ok'] = net_ok
-        diagnostics['network_error'] = net_error
+            diagnostics['git_remote_error'] = str(e)
+
+        # Check git branch
+        try:
+            r = git_cmd('branch --show-current', cwd=SERVER_DIR)
+            diagnostics['git_branch'] = r['stdout'].strip()
+        except Exception as e:
+            diagnostics['git_branch_error'] = str(e)
+
+        # Check current user
+        try:
+            r = subprocess.run('id', shell=True, capture_output=True, text=True, timeout=5)
+            diagnostics['current_user'] = r.stdout.strip()
+        except Exception as e:
+            diagnostics['current_user_error'] = str(e)
 
         if not write_ok:
             return jsonify({
@@ -2886,33 +2886,65 @@ def update_apply():
                 'diagnostics': diagnostics,
             }), 500
 
-        # ── Download and apply zip update ──
-        _log_write(f'[UPDATE] Starting zip download update...')
+        # ── Git pull update ──
+        _log_write(f'[UPDATE] Starting git pull in {SERVER_DIR} ...')
 
-        try:
-            copied, detail = _download_zip_update()
-            update_method = 'zip'
-        except Exception as e:
-            full_traceback = tb.format_exc()
-            _log_write(f'[UPDATE] FAILED: {full_traceback}')
+        # Step 1: git fetch
+        fetch_result = subprocess.run(
+            ['git', 'fetch', 'origin', 'main'],
+            capture_output=True, text=True, timeout=60, cwd=SERVER_DIR
+        )
+        diagnostics['fetch_returncode'] = fetch_result.returncode
+        diagnostics['fetch_stdout'] = fetch_result.stdout[:2000]
+        diagnostics['fetch_stderr'] = fetch_result.stderr[:2000]
+        _log_write(f'[UPDATE] git fetch: rc={fetch_result.returncode}, stderr={fetch_result.stderr[:500]}')
+
+        if fetch_result.returncode != 0:
             return jsonify({
-                'error': f'更新失败: {type(e).__name__}: {e}',
-                'traceback': full_traceback,
+                'error': f'git fetch origin main 失败 (exit code {fetch_result.returncode})',
+                'fetch_stderr': fetch_result.stderr,
+                'fetch_stdout': fetch_result.stdout,
                 'diagnostics': diagnostics,
             }), 500
 
-        _log_write(f'[UPDATE] Success via zip: {detail}')
+        # Step 2: git reset --hard origin/main (clean pull)
+        reset_result = subprocess.run(
+            ['git', 'reset', '--hard', 'origin/main'],
+            capture_output=True, text=True, timeout=60, cwd=SERVER_DIR
+        )
+        diagnostics['reset_returncode'] = reset_result.returncode
+        diagnostics['reset_stdout'] = reset_result.stdout[:2000]
+        diagnostics['reset_stderr'] = reset_result.stderr[:2000]
+        _log_write(f'[UPDATE] git reset --hard: rc={reset_result.returncode}, stderr={reset_result.stderr[:500]}')
+
+        if reset_result.returncode != 0:
+            return jsonify({
+                'error': f'git reset --hard origin/main 失败 (exit code {reset_result.returncode})',
+                'reset_stderr': reset_result.stderr,
+                'reset_stdout': reset_result.stdout,
+                'diagnostics': diagnostics,
+            }), 500
+
+        _log_write(f'[UPDATE] git pull success')
 
         # ── Restart server ──
         _restart_server()
 
         return jsonify({
             'ok': True,
-            'message': f'更新完成 (zip), 服务器正在重启...',
-            'method': 'zip',
-            'detail': detail,
+            'message': '代码更新完成 (git pull), 服务器正在重启...',
+            'method': 'git_pull',
+            'fetch_output': fetch_result.stdout.strip(),
+            'reset_output': reset_result.stdout.strip(),
             'diagnostics': diagnostics,
         })
+    except subprocess.TimeoutExpired as e:
+        full_traceback = tb.format_exc()
+        return jsonify({
+            'error': f'更新超时 ({e.cmd}, timeout={e.timeout})',
+            'traceback': full_traceback,
+            'diagnostics': diagnostics,
+        }), 500
     except Exception as e:
         full_traceback = tb.format_exc()
         return jsonify({
