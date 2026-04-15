@@ -832,7 +832,7 @@ html, body {
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    transition: height var(--transition);
+    transition: height 0.15s ease;
     height: var(--bottom-panel-height);
     flex-shrink: 0;
 }
@@ -841,6 +841,15 @@ html, body {
     min-height: 0;
     overflow: hidden;
     border-top: none;
+}
+/* When keyboard is open, bottom-panel lifts up */
+#bottom-panel.keyboard-open {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+    transition: none;
 }
 
 #bottom-panel-header {
@@ -884,18 +893,70 @@ html, body {
     word-break: break-all;
 }
 
+/* ==================== Shell Input Bar ==================== */
+#shell-input-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 6px 8px;
+    padding-bottom: calc(6px + var(--safe-bottom));
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+#shell-prompt {
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: bold;
+    padding: 0 6px 0 4px;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+#shell-input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.4;
+    outline: none;
+    -webkit-appearance: none;
+}
+#shell-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.2);
+}
+#shell-input::placeholder {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 .output-line {
-    padding: 1px 0;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(49, 50, 68, 0.3);
+}
+.output-line:last-child {
+    border-bottom: none;
 }
 .output-line.stdout {
     color: var(--text-primary);
 }
 .output-line.stderr {
     color: var(--red);
+    font-style: italic;
 }
 .output-line.error {
     color: var(--red);
     font-weight: 600;
+    text-decoration: underline wavy var(--red);
+    text-underline-offset: 2px;
 }
 .output-line.status {
     color: var(--text-muted);
@@ -903,6 +964,23 @@ html, body {
 }
 .output-line.info {
     color: var(--blue);
+}
+.output-line.success {
+    color: var(--green);
+}
+.output-line.system {
+    color: var(--mauve);
+    font-weight: 600;
+}
+.output-line .log-time {
+    color: var(--text-muted);
+    font-size: 10px;
+    margin-right: 6px;
+}
+.output-line .log-prefix {
+    color: var(--accent);
+    font-weight: bold;
+    margin-right: 4px;
 }
 
 /* Bottom panel tab panels */
@@ -932,6 +1010,42 @@ html, body {
     height: 3px;
     background: var(--border-light);
     border-radius: 2px;
+}
+
+/* ==================== Terminal Extra Keys ==================== */
+#terminal-extra-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+#terminal-extra-keys .tkey {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 36px;
+    text-align: center;
+    transition: background 0.1s;
+}
+#terminal-extra-keys .tkey:active {
+    background: var(--bg-hover);
+    transform: scale(0.94);
+}
+#terminal-extra-keys .tkey.active {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border-color: var(--accent);
 }
 
 /* ==================== Chat Panel ==================== */
@@ -1290,6 +1404,11 @@ button, .file-item, .search-result-item, .git-change-item {
     .search-result-text, .git-log-item .git-msg,
     .CodeMirror, .CodeMirror-linenumber {
         font-size: revert !important;
+    }
+    /* Shell input: keep 16px to prevent iOS zoom, but look compact */
+    #shell-input {
+        font-size: 16px !important;
+        padding: 6px 10px !important;
     }
 }
 
