@@ -93,11 +93,12 @@ jobs:
       run: ./gradlew assembleRelease --no-daemon
 
     # Step 4: Prepare output
+    # Note: buildDir is "../build" relative to android/, so APKs are at build/app/outputs/...
     - name: Prepare APK artifacts
       run: |
         mkdir -p dist
-        cp android/app/build/outputs/apk/debug/app-debug.apk dist/PhoneIDE-debug.apk
-        cp android/app/build/outputs/apk/release/app-release.apk dist/PhoneIDE-release.apk
+        cp build/app/outputs/apk/debug/app-debug.apk dist/PhoneIDE-debug.apk
+        cp build/app/outputs/apk/release/app-release.apk dist/PhoneIDE-release.apk
         echo "### Build Artifacts ###"
         ls -lh dist/
         echo ""
