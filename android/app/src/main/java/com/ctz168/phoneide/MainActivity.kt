@@ -3,7 +3,6 @@ package com.ctz168.phoneide
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,7 +12,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
 import android.view.Menu
@@ -35,7 +33,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -44,7 +41,6 @@ import okhttp3.RequestBody
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.SocketTimeoutException
@@ -70,7 +66,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusIndicator: View
     private lateinit var statusLabel: TextView
     private lateinit var btnRestart: View
-    private lateinit var btnLogs: View
     private lateinit var btnUpdate: View
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -132,8 +127,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupImmersiveMode() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Keep status bar transparent but handle insets via layout fitsSystemWindows
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
+            // Don't use setDecorFitsSystemWindows(false) - it causes bottom bar
+            // to be hidden behind system navigation. Let the layout handle it.
+            window.statusBarColor = android.graphics.Color.parseColor("#0D1117")
         } else {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (
@@ -160,15 +158,19 @@ class MainActivity : AppCompatActivity() {
         statusIndicator = findViewById(R.id.status_indicator)
         statusLabel = findViewById(R.id.status_label)
         btnRestart = findViewById(R.id.btn_restart)
-        btnLogs = findViewById(R.id.btn_logs)
         btnUpdate = findViewById(R.id.btn_update)
 
         retryButton.setOnClickListener { connectToServer() }
 
         // Server management button handlers
         btnRestart.setOnClickListener { handleRestart() }
-        btnLogs.setOnClickListener { handleShowLogs() }
-        btnUpdate.setOnClickListener { handleCheckUpdate() }
+        btnUpdate.setOnClickListener { handleCodeUpdate() }
+
+        // Terminal button
+        val btnTerminal = findViewById<View>(R.id.btn_terminal)
+        btnTerminal?.setOnClickListener {
+            startActivity(Intent(this, TerminalActivity::class.java))
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -234,104 +236,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Add JavascriptInterface for APK auto-update
-        webView.addJavascriptInterface(UpdateBridge(), "AndroidBridge")
+        // Add JavascriptInterface for native bridge
+        webView.addJavascriptInterface(NativeBridge(), "AndroidBridge")
     }
 
     // ========================
-    // APK Auto-Update via JS Bridge
+    // Native Bridge
     // ========================
 
-    inner class UpdateBridge {
+    inner class NativeBridge {
         @JavascriptInterface
-        fun downloadAndInstallApk(apkUrl: String, version: String) {
-            Log.d(TAG, "Download APK requested: $apkUrl (v$version)")
+        fun showToast(msg: String) {
             scope.launch {
-                downloadAndInstallApkInternal(apkUrl, version)
-            }
-        }
-    }
-
-    @SuppressLint("SetTextI18n")
-    private suspend fun downloadAndInstallApkInternal(apkUrl: String, version: String) {
-        val progressDialog = AlertDialog.Builder(this)
-            .setTitle("Downloading Update v$version")
-            .setMessage("Downloading APK, please wait...")
-            .setCancelable(false)
-            .setView(TextView(this).apply {
-                text = "Preparing download..."
-                setPadding(48, 0, 48, 0)
-                textSize = 14f
-            })
-            .create()
-
-        withContext(Dispatchers.Main) {
-            progressDialog.show()
-            // Make the dialog wider
-            progressDialog.window?.setLayout(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        try {
-            val outputFile = File(externalCacheDir, "phoneide-${version}.apk")
-
-            // Download APK in background
-            val success = withContext(Dispatchers.IO) {
-                try {
-                    val request = Request.Builder().url(apkUrl).build()
-                    val response = updateHttpClient.newCall(request).execute()
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "APK download failed: HTTP ${response.code}")
-                        false
-                    } else {
-                        val body = response.body ?: return@withContext false
-                        val totalBytes = body.contentLength()
-                        val inputStream = body.byteStream()
-
-                        var bytesRead = 0L
-                        val buffer = ByteArray(8192)
-                        val outputStream = FileOutputStream(outputFile)
-
-                        inputStream.use { input ->
-                            outputStream.use { output ->
-                                var read: Int
-                                while (input.read(buffer).also { read = it } != -1) {
-                                    output.write(buffer, 0, read)
-                                    bytesRead += read
-
-                                    // Update progress every 500KB
-                                    if (bytesRead % (500 * 1024) < 8192L) {
-                                        val progress = if (totalBytes > 0) {
-                                            "${(bytesRead * 100 / totalBytes)}% (${bytesRead / 1024 / 1024}MB / ${totalBytes / 1024 / 1024}MB)"
-                                        } else {
-                                            "${bytesRead / 1024 / 1024}MB downloaded"
-                                        }
-                                        withContext(Dispatchers.Main) {
-                                            if (progressDialog.isShowing) {
-                                                progressDialog.findViewById<TextView>(android.R.id.message)?.text = progress
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Log.d(TAG, "APK downloaded: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
-                        true
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "APK download error", e)
-                    false
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                 }
             }
-
             withContext(Dispatchers.Main) {
                 progressDialog.dismiss()
             }
 
             if (!success) {
-                MaterialAlertDialogBuilder(this)
+                MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("Download Failed")
                     .setMessage("Failed to download the update. Please check your network connection and try again.")
                     .setPositiveButton("OK", null)
@@ -359,7 +285,7 @@ class MainActivity : AppCompatActivity() {
     private fun installApk(apkFile: File) {
         try {
             val uri = FileProvider.getUriForFile(
-                this,
+                this@MainActivity,
                 "${packageName}.fileprovider",
                 apkFile
             )
@@ -383,7 +309,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to install APK", e)
-            MaterialAlertDialogBuilder(this)
+            MaterialAlertDialogBuilder(this@MainActivity)
                 .setTitle("Install Failed")
                 .setMessage("Could not install the update: ${e.message}")
                 .setPositiveButton("OK", null)
@@ -603,10 +529,16 @@ class MainActivity : AppCompatActivity() {
         // Connect to SSE log stream in background
         scope.launch(Dispatchers.IO) {
             try {
+                val logHttpClient = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(120, TimeUnit.SECONDS) // Long timeout for SSE stream
+                    .writeTimeout(10, TimeUnit.SECONDS)
+                    .build()
+
                 val request = Request.Builder()
                     .url("${PhoneIDEApp.SERVER_URL}/api/server/logs/stream")
                     .build()
-                val response = httpClient.newCall(request).execute()
+                val response = logHttpClient.newCall(request).execute()
 
                 if (!response.isSuccessful) {
                     withContext(Dispatchers.Main) {
@@ -619,9 +551,23 @@ class MainActivity : AppCompatActivity() {
                 var line: String?
                 while (reader.readLine().also { line = it } != null && isActive) {
                     val logLine = line ?: continue
+                    // Parse SSE data: extract JSON text field
+                    val displayText = if (logLine.startsWith("data: ")) {
+                        try {
+                            val json = org.json.JSONObject(logLine.removePrefix("data: "))
+                            val time = json.optString("time", "")
+                            val text = json.optString("text", "")
+                            if (time.isNotEmpty()) "[$time] $text" else text
+                        } catch (_: Exception) {
+                            logLine.removePrefix("data: ")
+                        }
+                    } else {
+                        logLine
+                    }
+                    if (displayText.isBlank()) continue
                     withContext(Dispatchers.Main) {
                         if (dialog.isShowing) {
-                            logTextView.append("$logLine\n")
+                            logTextView.append("$displayText\n")
                             // Auto-scroll to bottom
                             scrollView.post {
                                 scrollView.fullScroll(android.widget.ScrollView.FOCUS_DOWN)
@@ -642,76 +588,110 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ========================
-    // Update Button Handler
+    // Update Button Handler (git pull code update)
     // ========================
 
     @SuppressLint("SetTextI18n")
-    private fun handleCheckUpdate() {
+    private fun handleCodeUpdate() {
         btnUpdate.isEnabled = false
         scope.launch {
             try {
                 withContext(Dispatchers.Main) {
-                    // Show toast
-                    android.widget.Toast.makeText(
+                    Toast.makeText(
                         this@MainActivity,
-                        getString(R.string.update_checking),
-                        android.widget.Toast.LENGTH_SHORT
+                        "正在检查代码更新...",
+                        Toast.LENGTH_SHORT
                     ).show()
                 }
 
                 // POST to /api/update/check
                 val responseBody = withContext(Dispatchers.IO) {
-                    postToServerWithResponse("/api/update/check")
+                    try {
+                        val request = Request.Builder()
+                            .url("${PhoneIDEApp.SERVER_URL}/api/update/check")
+                            .post(RequestBody.create(null, byteArrayOf()))
+                            .build()
+                        val response = updateHttpClient.newCall(request).execute()
+                        val body = response.body?.string()
+                        response.close()
+                        body
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Update check failed", e)
+                        null
+                    }
                 }
 
                 if (responseBody == null) {
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "Could not check for updates",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(this@MainActivity, "无法检查更新，请检查网络", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
 
                 val json = JSONObject(responseBody)
+                val errorMsg = json.optString("error", "")
+                val errorType = json.optString("error_type", "")
+                val errorHint = json.optString("message", "")
                 val updateAvailable = json.optBoolean("update_available", false)
+                val codeUpdate = json.optBoolean("code_update", false)
                 val currentVersion = json.optString("current_version", "unknown")
-                val newVersion = json.optString("new_version", "")
-                val releaseNotes = json.optString("release_notes", "")
+                val localSha = json.optString("local_sha", "?")
+                val remoteSha = json.optString("remote_sha", "?")
+                val remoteMessage = json.optString("remote_message", "")
+                val remoteAuthor = json.optString("remote_author", "")
+                val remoteDate = json.optString("remote_date", "")
+                val commitsBehind = json.optInt("commits_behind", 0)
 
-                if (!updateAvailable) {
-                    // Up to date
+                // If the server returned an error (e.g. network issue reaching GitHub),
+                // show the actual error details instead of silently claiming "up to date".
+                if (errorMsg.isNotEmpty() && !updateAvailable) {
+                    val hint = if (errorHint.isNotEmpty()) "\n\n$errorHint" else ""
+                    val detail = if (errorType == "network") {
+                        "GitHub API 连接失败\n${errorMsg}$hint\n\n可能原因：\n" +
+                        "• 手机网络不稳定\n" +
+                        "• GitHub 在当前网络被限制\n" +
+                        "• DNS 解析失败（proot 环境常见）"
+                    } else {
+                        "更新检查出错\n${errorMsg}"
+                    }
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle(getString(R.string.update_current))
-                        .setMessage("Current version: $currentVersion")
-                        .setPositiveButton("OK", null)
+                        .setTitle("检查更新失败")
+                        .setMessage(detail)
+                        .setPositiveButton("确定", null)
                         .show()
                     return@launch
                 }
 
-                // Update available - show dialog
+                if (!updateAvailable || !codeUpdate) {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle("代码已是最新")
+                        .setMessage("当前版本: $currentVersion\n本地 commit: $localSha")
+                        .setPositiveButton("确定", null)
+                        .show()
+                    return@launch
+                }
+
+                // Show code update info and confirm
+                val behindText = if (commitsBehind > 0) "落后 $commitsBehind 个提交" else "有新的提交"
                 MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle(getString(R.string.update_available))
+                    .setTitle("发现代码更新")
                     .setMessage(
-                        "New version: $newVersion\n" +
-                        "Current version: $currentVersion\n\n" +
-                        "Release notes:\n$releaseNotes"
+                        "当前版本: $currentVersion\n" +
+                        "$behindText\n\n" +
+                        "远程最新:\n$remoteMessage\n" +
+                        "作者: $remoteAuthor\n" +
+                        (if (remoteDate.isNotEmpty()) "时间: $remoteDate" else "") +
+                        "\n\n点击更新将执行 git pull 并重启服务器"
                     )
-                    .setPositiveButton("Update Now") { _, _ ->
-                        applyUpdate(newVersion)
+                    .setPositiveButton("立即更新") { _, _ ->
+                        applyCodeUpdate(currentVersion)
                     }
-                    .setNegativeButton("Later", null)
+                    .setNegativeButton("稍后", null)
                     .show()
             } catch (e: Exception) {
                 Log.e(TAG, "Update check failed", e)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Update check failed: ${e.message}",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(this@MainActivity, "更新检查失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             } finally {
                 btnUpdate.isEnabled = true
@@ -720,66 +700,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("SetTextI18n")
-    private fun applyUpdate(version: String) {
+    private fun applyCodeUpdate(version: String) {
         btnUpdate.isEnabled = false
-
-        // Show progress dialog
         val progressDialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.updating))
-            .setMessage("Downloading and applying update to $version...\n\nPlease wait, this may take a moment.")
+            .setTitle("正在更新代码")
+            .setMessage("正在拉取最新代码并重启服务器...\n\n请稍候")
             .setCancelable(false)
             .create()
         progressDialog.show()
 
         scope.launch {
             try {
-                // POST to /api/update/apply
                 val success = withContext(Dispatchers.IO) {
                     postToServer("/api/update/apply", useUpdateClient = true)
                 }
-
-                withContext(Dispatchers.Main) {
-                    progressDialog.dismiss()
-                }
+                withContext(Dispatchers.Main) { progressDialog.dismiss() }
 
                 if (success) {
-                    // Restart server and reload
                     withContext(Dispatchers.Main) {
                         updateStatusIndicator(false)
                         statusLabel.text = getString(R.string.server_restarting)
-
                         stopServerService()
                         startServerService()
+                        showLoading("服务器重启中...")
 
-                        showLoading("Server restarting after update...")
-
-                        // Poll until server is back
                         scope.launch {
                             var attempts = 0
                             while (attempts < 30 && isActive) {
                                 delay(HEALTH_POLL_INTERVAL)
-                                val isUp = withContext(Dispatchers.IO) {
-                                    checkServerConnection()
-                                }
+                                val isUp = withContext(Dispatchers.IO) { checkServerConnection() }
                                 if (isUp) break
                                 attempts++
                             }
                             hideAllOverlays()
                             loadIDE()
                             updateStatusIndicator(true)
-
-                            android.widget.Toast.makeText(
-                                this@MainActivity,
-                                "Updated to $version successfully!",
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
+                            Toast.makeText(this@MainActivity, "代码已更新到 $version", Toast.LENGTH_LONG).show()
                         }
                     }
                 } else {
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("Update Failed")
-                        .setMessage("The update could not be applied. Please try again or check server logs.")
-                        .setPositiveButton("OK", null)
+                        .setTitle("更新失败")
+                        .setMessage("无法拉取代码，请检查网络后重试")
+                        .setPositiveButton("确定", null)
                         .show()
                 }
             } catch (e: Exception) {
@@ -787,9 +750,9 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("Update Failed")
-                        .setMessage("Error: ${e.message}")
-                        .setPositiveButton("OK", null)
+                        .setTitle("更新失败")
+                        .setMessage("错误: ${e.message}")
+                        .setPositiveButton("确定", null)
                         .show()
                 }
             } finally {
@@ -882,30 +845,45 @@ class MainActivity : AppCompatActivity() {
     // ========================
 
     private fun requestRuntimePermissions() {
+        val permsToRequest = mutableListOf<String>()
+
         // POST_NOTIFICATIONS is runtime permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
             ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    1001
-                )
+                permsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
+        // REQUEST_INSTALL_PACKAGES — needed for APK auto-update on Android 8+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!packageManager.canRequestPackageInstalls()) {
+                try {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (permsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permsToRequest.toTypedArray(),
+                1001
+            )
+        }
+
         // Request battery optimization exemption (critical for background service survival)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent()
-            val packageName = "com.ctz168.phoneide"
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val intent = Intent()
                 intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
                 intent.data = Uri.parse("package:$packageName")
-            }
-            try {
-                // Don't show the intent directly — just mark that user should do it.
-                // The "About" dialog already mentions this tip.
+                startActivity(intent)
             } catch (_: Exception) {}
         }
     }

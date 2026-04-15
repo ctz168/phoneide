@@ -131,7 +131,9 @@ const TerminalManager = (() => {
         showPanel();
 
         try {
-            appendOutput(`$ Running ${file_path} [${compiler}]...`, 'status');
+            appendOutput(`─────────────────────────────────────────`, 'status');
+            appendOutput(`$ ${compiler} ${file_path}${args ? ' ' + args : ''}`, 'system');
+            appendOutput(`[info] PID: pending... | CWD: workspace | Time: ${new Date().toLocaleString()}`, 'info');
 
             const body = { file_path, compiler };
             if (args) body.args = args;
@@ -150,6 +152,7 @@ const TerminalManager = (() => {
             pollSince = 0;
 
             if (currentProcId) {
+                appendOutput(`[info] PID: ${currentProcId} | Streaming output...`, 'info');
                 setRunningState(true);
                 streamOutput(currentProcId);
             } else {
@@ -165,14 +168,15 @@ const TerminalManager = (() => {
                 }
                 if (data.exit_code !== undefined) {
                     const code = data.exit_code;
-                    const type = code === 0 ? 'info' : 'error';
-                    appendOutput(`Process exited with code ${code}`, type);
+                    const type = code === 0 ? 'success' : 'error';
+                    appendOutput(`[exit] Code: ${code} (${type === 'success' ? 'OK' : 'FAIL'})`, type);
                 }
             }
 
             return data;
         } catch (err) {
-            appendOutput(`Error: ${err.message}`, 'error');
+            appendOutput(`[error] Execution failed: ${err.message}`, 'error');
+            appendOutput(`[info] Check network connection and try again.`, 'info');
             showToast(`Execution error: ${err.message}`, 'error');
             return { error: err.message };
         }
@@ -200,7 +204,9 @@ const TerminalManager = (() => {
         showPanel();
 
         try {
-            appendOutput(`$ Executing code [${compiler}]...`, 'status');
+            const displayCode = code.length > 120 ? code.substring(0, 120) + '...' : code;
+            appendOutput(`$ [${compiler}] ${displayCode}`, 'system');
+            appendOutput(`[info] Shell exec | Time: ${new Date().toLocaleString()}`, 'info');
 
             const body = { code, compiler };
 
@@ -218,6 +224,7 @@ const TerminalManager = (() => {
             pollSince = 0;
 
             if (currentProcId) {
+                appendOutput(`[info] PID: ${currentProcId} | Streaming output...`, 'info');
                 setRunningState(true);
                 streamOutput(currentProcId);
             } else {
@@ -226,13 +233,15 @@ const TerminalManager = (() => {
                 if (data.error) appendOutput(data.error, 'error');
                 if (data.exit_code !== undefined) {
                     const code2 = data.exit_code;
-                    appendOutput(`Process exited with code ${code2}`, code2 === 0 ? 'info' : 'error');
+                    const type = code2 === 0 ? 'success' : 'error';
+                    appendOutput(`[exit] Code: ${code2} (${type === 'success' ? 'OK' : 'FAIL'})`, type);
                 }
             }
 
             return data;
         } catch (err) {
-            appendOutput(`Error: ${err.message}`, 'error');
+            appendOutput(`[error] Execution failed: ${err.message}`, 'error');
+            appendOutput(`[info] Check network connection and try again.`, 'info');
             showToast(`Execution error: ${err.message}`, 'error');
             return { error: err.message };
         }
@@ -254,7 +263,7 @@ const TerminalManager = (() => {
         }
 
         try {
-            appendOutput(`Stopping process ${procId}...`, 'status');
+            appendOutput(`[system] Sending SIGTERM to process ${procId}...`, 'system');
 
             const resp = await fetch('/api/run/stop', {
                 method: 'POST',
@@ -265,7 +274,8 @@ const TerminalManager = (() => {
             if (!resp.ok) throw new Error(`Stop failed: ${resp.statusText}`);
 
             const data = await resp.json();
-            appendOutput('Process stopped', 'status');
+            appendOutput(`[success] Process ${procId} stopped.`, 'success');
+            appendOutput(`─────────────────────────────────────────`, 'status');
             cleanupProcess();
             showToast('Process stopped', 'info');
 
@@ -317,13 +327,16 @@ const TerminalManager = (() => {
 
             eventSource.addEventListener('exit', (e) => {
                 const exitCode = e.data;
-                const type = parseInt(exitCode, 10) === 0 ? 'info' : 'error';
-                appendOutput(`Process exited with code ${exitCode}`, type);
+                const type = parseInt(exitCode, 10) === 0 ? 'success' : 'error';
+                const statusText = parseInt(exitCode, 10) === 0 ? 'completed successfully' : 'failed';
+                appendOutput(`─────────────────────────────────────────`, 'status');
+                appendOutput(`[exit] Process ${statusText} (code: ${exitCode})`, type);
                 cleanupProcess();
             });
 
             eventSource.addEventListener('done', (e) => {
-                appendOutput(e.data || 'Done.', 'info');
+                appendOutput(e.data || 'Done.', 'success');
+                appendOutput(`─────────────────────────────────────────`, 'status');
                 cleanupProcess();
             });
 
@@ -393,7 +406,11 @@ const TerminalManager = (() => {
             if (Array.isArray(lines)) {
                 for (const line of lines) {
                     const text = typeof line === 'string' ? line : (line.text || line.content || '');
-                    const type = typeof line === 'object' ? (line.type || line.stream || 'stdout') : 'stdout';
+                    const rawType = typeof line === 'object' ? (line.type || line.stream || 'stdout') : 'stdout';
+                    // Map server types to display types with better colors
+                    const type = rawType === 'error' ? 'error' :
+                                rawType === 'status' ? 'system' :
+                                rawType === 'stderr' ? 'stderr' : 'stdout';
                     appendOutput(text, type);
                     pollSince++;
                 }
@@ -466,12 +483,79 @@ const TerminalManager = (() => {
         setRunningState(false);
     }
 
+    // ── Keyboard / Viewport Handling (Mobile) ──────────────────
+
+    let keyboardOpen = false;
+    let savedPanelHeight = 250;
+
+    /**
+     * Initialize visualViewport listener to handle soft keyboard
+     * On Android WebView, when the keyboard appears, visualViewport shrinks.
+     * We detect this and make the bottom panel float above the keyboard.
+     */
+    function initKeyboardHandler() {
+        if (!window.visualViewport) return;
+
+        const vv = window.visualViewport;
+
+        const onResize = () => {
+            const keyboardH = window.innerHeight - vv.height;
+            const isKeyboard = keyboardH > 100 && document.activeElement &&
+                (document.activeElement.id === 'shell-input' || document.activeElement.closest('#shell-input-bar'));
+
+            const panel = document.getElementById('bottom-panel');
+            if (!panel) return;
+
+            if (isKeyboard) {
+                keyboardOpen = true;
+                // Save current height before keyboard override
+                savedPanelHeight = panelHeight;
+                // Expand panel to fill most of the visible area
+                const targetH = vv.height - 44; // leave toolbar visible
+                panel.classList.add('keyboard-open');
+                panel.style.height = Math.max(targetH, 200) + 'px';
+                // Scroll output to bottom so user sees latest
+                const outputEl = document.getElementById('output-content');
+                if (outputEl) setTimeout(() => outputEl.scrollTop = outputEl.scrollHeight, 50);
+            } else if (keyboardOpen) {
+                keyboardOpen = false;
+                panel.classList.remove('keyboard-open');
+                panel.style.height = savedPanelHeight + 'px';
+            }
+        };
+
+        vv.addEventListener('resize', onResize);
+        vv.addEventListener('scroll', onResize);
+
+        // Also listen for focus/blur on shell-input as a fallback
+        const shellInput = document.getElementById('shell-input');
+        if (shellInput) {
+            shellInput.addEventListener('focus', () => {
+                // Delay to let keyboard animation start
+                setTimeout(onResize, 100);
+                setTimeout(onResize, 300);
+            });
+            shellInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    if (keyboardOpen) {
+                        keyboardOpen = false;
+                        const panel = document.getElementById('bottom-panel');
+                        if (panel) {
+                            panel.classList.remove('keyboard-open');
+                            panel.style.height = savedPanelHeight + 'px';
+                        }
+                    }
+                }, 100);
+            });
+        }
+    }
+
     // ── Output Display ─────────────────────────────────────────────
 
     /**
      * Append a line of text to the output panel
      * @param {string} text - the text to append
-     * @param {string} [type='stdout'] - type class: stdout, stderr, error, status, info
+     * @param {string} [type='stdout'] - type class: stdout, stderr, error, status, info, success, system
      */
     function appendOutput(text, type) {
         const container = document.getElementById('output-content');
@@ -481,7 +565,17 @@ const TerminalManager = (() => {
 
         const line = document.createElement('div');
         line.className = `output-line ${type}`;
-        line.textContent = text || '';
+
+        // Add timestamp for important lines (not stdout to avoid clutter)
+        if (type !== 'stdout') {
+            const ts = document.createElement('span');
+            ts.className = 'log-time';
+            ts.textContent = timestamp();
+            line.appendChild(ts);
+        }
+
+        const textSpan = document.createTextNode(text || '');
+        line.appendChild(textSpan);
         container.appendChild(line);
 
         // Trim if too many lines
@@ -534,11 +628,14 @@ const TerminalManager = (() => {
         const panel = document.getElementById('bottom-panel');
         if (!panel) return;
 
+        // Remove 'hidden' class first (CSS has display:none !important)
+        panel.classList.remove('hidden');
+
         if (panel.style.display === 'none' || !panel.classList.contains('visible')) {
             showPanel();
         } else {
             hidePanel();
-        }
+ }
     }
 
     /**
@@ -622,6 +719,12 @@ const TerminalManager = (() => {
     // ── Wire Up ────────────────────────────────────────────────────
 
     function wireEvents() {
+        // Expose for DebugManager keyboard-open state
+        window.addEventListener('shell:focus', () => {
+            const panel = document.getElementById('bottom-panel');
+            if (panel) panel.style.height = savedPanelHeight + 'px';
+        });
+
         // Close panel button
         const closeBtn = document.getElementById('bottom-panel-close');
         if (closeBtn) {
@@ -640,23 +743,7 @@ const TerminalManager = (() => {
             });
         }
 
-        // Run button
-        const runBtn = document.getElementById('btn-run');
-        if (runBtn) {
-            runBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-
-                // Determine what to run: current file or ask user
-                const filePath = window.FileManager ? window.FileManager.currentFilePath : null;
-
-                if (filePath) {
-                    execute(filePath);
-                } else {
-                    showToast('No file open to run', 'warning');
-                }
-            });
-        }
-
+        // Run button is handled by AppManager (with file picker), not here.
         // Stop button
         const stopBtn = document.getElementById('btn-stop');
         if (stopBtn) {
@@ -670,6 +757,164 @@ const TerminalManager = (() => {
 
         // Initialize resize handle
         initResize();
+
+        // ── Shell Input Bar ──
+        initShellInput();
+
+        // ── Terminal Extra Keys ──
+        initExtraKeys();
+    }
+
+    // ── Shell Input Bar ──────────────────────────────────────────
+
+    let shellHistory = [];
+    let shellHistoryIndex = -1;
+
+    function initShellInput() {
+        const shellInput = document.getElementById('shell-input');
+        if (!shellInput) return;
+
+        shellInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const cmd = shellInput.value.trim();
+                if (!cmd) return;
+
+                // Add to history
+                shellHistory.push(cmd);
+                shellHistoryIndex = shellHistory.length;
+
+                // Show the command in output
+                appendOutput(`─────────────────────────────────────────`, 'status');
+                appendOutput(`$ ${cmd}`, 'system');
+                appendOutput(`[info] Shell command | Time: ${new Date().toLocaleString()}`, 'info');
+
+                // Execute via API
+                executeCode(cmd, 'bash');
+                shellInput.value = '';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (shellHistoryIndex > 0) {
+                    shellHistoryIndex--;
+                    shellInput.value = shellHistory[shellHistoryIndex] || '';
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (shellHistoryIndex < shellHistory.length - 1) {
+                    shellHistoryIndex++;
+                    shellInput.value = shellHistory[shellHistoryIndex] || '';
+                } else {
+                    shellHistoryIndex = shellHistory.length;
+                    shellInput.value = '';
+                }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                // Simple tab completion - not full, but inserts a tab character
+                const start = shellInput.selectionStart;
+                const end = shellInput.selectionEnd;
+                shellInput.value = shellInput.value.substring(0, start) + '\t' + shellInput.value.substring(end);
+                shellInput.selectionStart = shellInput.selectionEnd = start + 1;
+            } else if (e.key === 'c' && e.ctrlKey) {
+                e.preventDefault();
+                appendOutput('^C', 'status');
+                stop();
+            } else if (e.key === 'l' && e.ctrlKey) {
+                e.preventDefault();
+                clearOutput();
+            }
+        });
+
+        // Focus shell input when clicking on output area
+        const outputContent = document.getElementById('output-content');
+        if (outputContent) {
+            outputContent.addEventListener('click', () => {
+                shellInput.focus();
+            });
+        }
+    }
+
+    // ── Terminal Extra Keys ──────────────────────────────────────
+
+    let ctrlActive = false;
+
+    function initExtraKeys() {
+        const keysBar = document.getElementById('terminal-extra-keys');
+        if (!keysBar) return;
+
+        const keyMap = {
+            'esc': '\x1b',
+            'tab': '\t',
+            'up': '\x1b[A',
+            'down': '\x1b[B',
+            'left': '\x1b[D',
+            'right': '\x1b[C',
+            'home': '\x1b[H',
+            'end': '\x1b[F',
+            'pgup': '\x1b[5~',
+            'pgdn': '\x1b[6~',
+            'pipe': '|',
+            'slash': '/',
+            'tilde': '~',
+            'minus': '-',
+            'enter': '\r',
+        };
+
+        keysBar.querySelectorAll('.tkey').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const key = btn.dataset.key;
+                const shellInput = document.getElementById('shell-input');
+                if (!shellInput) return;
+
+                if (key === 'ctrl') {
+                    ctrlActive = !ctrlActive;
+                    btn.classList.toggle('active', ctrlActive);
+                    return;
+                }
+
+                // If CTRL is active and key is a single letter, send Ctrl+key
+                if (ctrlActive && key.length === 1 && key >= 'a' && key <= 'z') {
+                    // Insert the control character into the shell input
+                    const ctrlChar = String.fromCharCode(key.charCodeAt(0) - 96);
+                    const pos = shellInput.selectionStart;
+                    shellInput.value = shellInput.value.substring(0, pos) + ctrlChar + shellInput.value.substring(shellInput.selectionEnd);
+                    shellInput.selectionStart = shellInput.selectionEnd = pos + 1;
+                    ctrlActive = false;
+                    const ctrlBtn = keysBar.querySelector('[data-key="ctrl"]');
+                    if (ctrlBtn) ctrlBtn.classList.remove('active');
+                    return;
+                }
+
+                // For escape sequences that should trigger shell input behaviors
+                if (key === 'up' || key === 'down') {
+                    // Simulate arrow key for history navigation
+                    const event = new KeyboardEvent('keydown', {
+                        key: key === 'up' ? 'ArrowUp' : 'ArrowDown',
+                        bubbles: true
+                    });
+                    shellInput.dispatchEvent(event);
+                    return;
+                }
+
+                if (key === 'enter') {
+                    const event = new KeyboardEvent('keydown', {
+                        key: 'Enter',
+                        bubbles: true
+                    });
+                    shellInput.dispatchEvent(event);
+                    return;
+                }
+
+                // For other keys, insert the character
+                const char = keyMap[key];
+                if (char) {
+                    const pos = shellInput.selectionStart;
+                    shellInput.value = shellInput.value.substring(0, pos) + char + shellInput.value.substring(shellInput.selectionEnd);
+                    shellInput.selectionStart = shellInput.selectionEnd = pos + char.length;
+                    shellInput.focus();
+                }
+            });
+        });
     }
 
     // ── Initialize ─────────────────────────────────────────────────
@@ -677,9 +922,92 @@ const TerminalManager = (() => {
     function init() {
         wireEvents();
         loadCompilers();
-
-        // Ensure initial panel state
+        loadVenvInfo();
         setRunningState(false);
+        initKeyboardHandler();
+
+        // Print startup banner with system info
+        printStartupBanner();
+
+        // Auto-detect venv when workspace changes
+        window.addEventListener('workspace:changed', () => {
+            loadVenvInfo();
+            appendOutput('[system] Workspace changed: ' + (window.FileManager ? window.FileManager.workspacePath : 'unknown'), 'system');
+        });
+    }
+
+    /**
+     * Print a startup banner with useful system info
+     */
+    async function printStartupBanner() {
+        const lines = [];
+        lines.push('╔══════════════════════════════════════╗');
+        lines.push('║         PhoneIDE Terminal v3.0        ║');
+        lines.push('╚══════════════════════════════════════╝');
+        lines.push('');
+
+        // System info
+        const ua = navigator.userAgent;
+        const isAndroid = /Android/i.test(ua);
+        const isIOS = /iPhone|iPad|iPod/i.test(ua);
+        const platform = isAndroid ? 'Android' : (isIOS ? 'iOS' : navigator.platform);
+        const screenInfo = `${window.innerWidth}x${window.innerHeight}`;
+        const viewportInfo = window.visualViewport ? `${window.visualViewport.width}x${window.visualViewport.height}` : screenInfo;
+
+        lines.push(`[system] Platform: ${platform}`);
+        lines.push(`[system] Screen: ${screenInfo} | Viewport: ${viewportInfo}`);
+        lines.push(`[system] UA: ${ua.substring(0, 80)}...`);
+        lines.push('');
+
+        // Fetch server info
+        try {
+            const resp = await fetch('/api/health');
+            if (resp.ok) {
+                const data = await resp.json();
+                lines.push(`[system] Server: OK (v${data.version || '?'}) on port ${data.port || '?'}`);
+            }
+        } catch (e) {
+            lines.push(`[system] Server: Connection failed - ${e.message}`);
+        }
+
+        // Fetch config info
+        try {
+            const resp = await fetch('/api/config');
+            if (resp.ok) {
+                const cfg = await resp.json();
+                lines.push(`[system] Workspace: ${cfg.workspace || '?'}`);
+                if (cfg.venv_path) {
+                    lines.push(`[system] Venv: ${cfg.venv_path}`);
+                }
+                lines.push(`[system] Compiler: ${cfg.compiler || 'auto'}`);
+            }
+        } catch (e) {
+            lines.push(`[system] Config: unavailable`);
+        }
+
+        // Fetch compilers
+        try {
+            const resp = await fetch('/api/compilers');
+            if (resp.ok) {
+                const data = await resp.json();
+                const comps = data.compilers || [];
+                if (comps.length > 0) {
+                    lines.push(`[system] Available: ${comps.map(c => c.id).join(', ')}`);
+                }
+            }
+        } catch (e) {}
+
+        lines.push('');
+        lines.push('[info] Type commands below and press Enter to execute.');
+        lines.push('[info] Use Run button (▶) to execute the current file.');
+        lines.push('');
+
+        for (const l of lines) {
+            const type = l.startsWith('[system]') ? 'system' :
+                         l.startsWith('[info]') ? 'info' :
+                         l.startsWith('╔') || l.startsWith('║') || l.startsWith('╚') ? 'status' : 'stdout';
+            appendOutput(l, type);
+        }
     }
 
     // Auto-init when DOM is ready
@@ -687,6 +1015,190 @@ const TerminalManager = (() => {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();
+    }
+
+    // ── API: Venv ─────────────────────────────────────────────────
+
+    /**
+     * Load venv info from backend and update UI
+     */
+    async function loadVenvInfo() {
+        try {
+            const resp = await fetch('/api/venv/list');
+            if (!resp.ok) throw new Error(`Failed to load venv: ${resp.statusText}`);
+            const data = await resp.json();
+
+            const currentVenvEl = document.getElementById('current-venv');
+            if (currentVenvEl) {
+                if (data.current) {
+                    const name = data.current.split('/').pop();
+                    currentVenvEl.textContent = name;
+                } else {
+                    currentVenvEl.textContent = '未设置';
+                }
+            }
+
+            // Auto-activate first found venv if none is active
+            if (!data.current && data.venvs && data.venvs.length > 0) {
+                const firstVenv = data.venvs[0];
+                if (firstVenv.path) {
+                    try {
+                        await fetch('/api/venv/activate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path: firstVenv.path })
+                        });
+                        if (currentVenvEl) {
+                            currentVenvEl.textContent = firstVenv.name;
+                        }
+                    } catch (_e) {}
+                }
+            }
+
+            // Show/hide venv packages button
+            const venvPackagesDiv = document.getElementById('venv-packages');
+            if (venvPackagesDiv && data.current) {
+                // Load and show packages
+                try {
+                    const pkgResp = await fetch('/api/venv/packages');
+                    if (pkgResp.ok) {
+                        const pkgData = await pkgResp.json();
+                        const pkgList = document.getElementById('venv-pkg-list');
+                        if (pkgList && pkgData.packages) {
+                            pkgList.innerHTML = pkgData.packages.map(p => 
+                                `<div style="padding:2px 8px;">${p.name || p.key} ${p.version || ''}</div>`
+                            ).join('');
+                            venvPackagesDiv.style.display = '';
+                        }
+                    }
+                } catch (_e) {}
+            }
+
+            return data;
+        } catch (err) {
+            console.warn('Failed to load venv info:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Create a virtual environment
+     */
+    async function createVenv(path) {
+        if (!path) {
+            if (window.showPromptDialog) {
+                path = await new Promise(resolve => {
+                    window.showPromptDialog('创建虚拟环境', '输入路径 (留空使用默认 .venv):', '.venv', resolve);
+                });
+            } else {
+                path = prompt('Enter venv path:', '.venv');
+            }
+        }
+        if (!path) return;
+
+        showPanel();
+        appendOutput('$ Creating virtual environment...', 'status');
+
+        try {
+            const resp = await fetch('/api/venv/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            if (!resp.ok) throw new Error(`Failed to create venv: ${resp.statusText}`);
+
+            const data = await resp.json();
+            if (data.proc_id) {
+                currentProcId = data.proc_id;
+                pollSince = 0;
+                setRunningState(true);
+                streamOutput(data.proc_id);
+            } else {
+                appendOutput('Virtual environment created.', 'info');
+                showToast('虚拟环境已创建', 'success');
+            }
+
+            // Refresh venv info
+            await loadVenvInfo();
+            return data;
+        } catch (err) {
+            appendOutput(`Error: ${err.message}`, 'error');
+            showToast(`创建失败: ${err.message}`, 'error');
+            return { error: err.message };
+        }
+    }
+
+    /**
+     * Install a Python package
+     */
+    async function installPackage(packageName) {
+        if (!packageName) {
+            if (window.showPromptDialog) {
+                packageName = await new Promise(resolve => {
+                    window.showPromptDialog('安装包', '输入包名:', '', resolve);
+                });
+            } else {
+                packageName = prompt('Enter package name:');
+            }
+        }
+        if (!packageName) return;
+
+        showPanel();
+        appendOutput(`$ pip install ${packageName}...`, 'status');
+
+        try {
+            const resp = await fetch('/api/run/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code: `import subprocess; result = subprocess.run(['pip', 'install', '${packageName}'], capture_output=True, text=True); print(result.stdout); print(result.stderr)`,
+                    compiler: 'python3'
+                })
+            });
+            if (!resp.ok) throw new Error(`Failed: ${resp.statusText}`);
+
+            const data = await resp.json();
+            if (data.proc_id) {
+                currentProcId = data.proc_id;
+                pollSince = 0;
+                setRunningState(true);
+                streamOutput(data.proc_id);
+            }
+            return data;
+        } catch (err) {
+            appendOutput(`Error: ${err.message}`, 'error');
+            showToast(`安装失败: ${err.message}`, 'error');
+            return { error: err.message };
+        }
+    }
+
+    /**
+     * Import requirements.txt
+     */
+    async function importRequirements() {
+        showPanel();
+        appendOutput('$ pip install -r requirements.txt...', 'status');
+        try {
+            const resp = await fetch('/api/run/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code: 'import subprocess; result = subprocess.run(["pip", "install", "-r", "requirements.txt"], capture_output=True, text=True); print(result.stdout); print(result.stderr)',
+                    compiler: 'python3'
+                })
+            });
+            if (!resp.ok) throw new Error(`Failed: ${resp.statusText}`);
+            const data = await resp.json();
+            if (data.proc_id) {
+                currentProcId = data.proc_id;
+                pollSince = 0;
+                setRunningState(true);
+                streamOutput(data.proc_id);
+            }
+        } catch (err) {
+            appendOutput(`Error: ${err.message}`, 'error');
+            showToast(`安装失败: ${err.message}`, 'error');
+        }
     }
 
     // ── Public API ─────────────────────────────────────────────────
@@ -703,6 +1215,10 @@ const TerminalManager = (() => {
         getSelectedCompiler,
         showPanel,
         hidePanel,
+        loadVenvInfo,
+        createVenv,
+        installPackage,
+        importRequirements,
 
         // Getters
         get currentProcId() { return currentProcId; },

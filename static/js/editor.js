@@ -15,7 +15,7 @@ const EditorManager = (() => {
 
     // ── Config ─────────────────────────────────────────────────────
     const config = {
-        fontSize: 14,
+        fontSize: 12,
         tabSize: 4,
         indentUnit: 4,
         indentWithTabs: false,
@@ -143,8 +143,8 @@ const EditorManager = (() => {
             lineWrapping: config.lineWrapping,
             viewportMargin: Infinity,        // render full doc for mobile perf
 
-            // Mobile-friendly input
-            inputStyle: 'contenteditable',
+            // Mobile-friendly input — textarea mode for search dialog compatibility
+            inputStyle: 'textarea',
 
             // Indentation
             tabSize: config.tabSize,
@@ -254,6 +254,21 @@ const EditorManager = (() => {
         window.addEventListener('resize', debounce(() => {
             resize();
         }, 150));
+
+        // Goto line button
+        const gotoLineBtn = document.getElementById('editor-goto-line-btn');
+        if (gotoLineBtn) {
+            gotoLineBtn.addEventListener('click', () => {
+                if (window.showPromptDialog) {
+                    window.showPromptDialog('跳转到行', '输入行号:', '', (val) => {
+                        if (val) goToLine(parseInt(val));
+                    });
+                } else {
+                    const line = prompt('Go to line:');
+                    if (line) goToLine(parseInt(line));
+                }
+            });
+        }
 
         // Markdown preview toggle
         const mdToggleBtn = document.getElementById('btn-md-toggle');
@@ -609,7 +624,7 @@ const EditorManager = (() => {
             lineWrapping: config.lineWrapping,
             theme: config.theme,
             mode: currentMode,
-            inputStyle: 'contenteditable',
+            inputStyle: 'textarea',
             viewportMargin: Infinity
         };
     }

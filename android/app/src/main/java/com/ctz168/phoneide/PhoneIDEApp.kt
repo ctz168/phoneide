@@ -22,9 +22,9 @@ class PhoneIDEApp : Application() {
         const val PREF_NAME = "phoneide_prefs"
         const val PREF_SETUP_COMPLETE = "setup_complete"
 
-        // Version
-        const val VERSION_NAME = "3.0.1"
-        const val VERSION_CODE = 4
+        // Version (synced with build.gradle)
+        const val VERSION_NAME = "3.0.39"
+        const val VERSION_CODE = 39
 
         /** Last crash info saved by global exception handler. */
         var lastCrashInfo: String? = null

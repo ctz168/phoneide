@@ -22,8 +22,8 @@ android {
         applicationId = "com.ctz168.phoneide"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "3.0.0"
+        versionCode = 40
+        versionName = "3.0.40"
     }
 
     compileOptions {
@@ -66,6 +66,36 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+}
+
+// Auto-sync IDE files (server.py + static/) into assets/ide/
+def ideSourceDir = file(projectDir).parentFile // phoneide/ root
+def ideAssetsDir = file('src/main/assets/ide')
+
+task syncIdeFiles {
+    group = 'build'
+    description = 'Sync server.py and static/ into assets/ide/'
+    doLast {
+        ideAssetsDir.mkdirs()
+        // Copy server.py
+        copy {
+            from new File(ideSourceDir, 'server.py')
+            into ideAssetsDir
+        }
+        // Copy static/ directory
+        copy {
+            from new File(ideSourceDir, 'static')
+            into new File(ideAssetsDir, 'static')
+        }
+        println 'IDE files synced to assets/ide/'
+    }
+}
+
+// Make sure IDE files are synced before every build
+tasks.whenTaskAdded { task ->
+    if (task.name == 'mergeDebugAssets' || task.name == 'mergeReleaseAssets') {
+        task.dependsOn syncIdeFiles
     }
 }
 

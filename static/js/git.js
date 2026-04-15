@@ -11,6 +11,23 @@ const GitManager = (() => {
     let logData = [];
     let branchData = [];
 
+    /**
+     * Get the current git working directory from the file manager.
+     * Returns empty string if at workspace root (server will use default).
+     */
+    function getGitCwd() {
+        if (window.FileManager) {
+            const cp = window.FileManager.currentPath;
+            // Return path relative to workspace for the server API
+            // currentPath is like '/workspace/myrepo' — server needs 'myrepo'
+            if (cp && cp !== '/workspace' && cp !== '/' && cp !== '') {
+                // Strip leading /workspace prefix if present
+                return cp.replace(/^\/workspace\/?/, '');
+            }
+        }
+        return '';
+    }
+
     // ── API: Status ────────────────────────────────────────────────
 
     /**
@@ -18,7 +35,9 @@ const GitManager = (() => {
      */
     async function refreshStatus() {
         try {
-            const resp = await fetch('/api/git/status');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/status${params}`);
             if (!resp.ok) throw new Error(`Failed to get status: ${resp.statusText}`);
             const data = await resp.json();
             statusData = data;
@@ -38,7 +57,9 @@ const GitManager = (() => {
      */
     async function refreshLog() {
         try {
-            const resp = await fetch('/api/git/log');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/log${params}`);
             if (!resp.ok) throw new Error(`Failed to get log: ${resp.statusText}`);
             const data = await resp.json();
             logData = Array.isArray(data) ? data : (data.commits || []);
@@ -57,7 +78,9 @@ const GitManager = (() => {
      */
     async function refreshBranches() {
         try {
-            const resp = await fetch('/api/git/branch');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/branch${params}`);
             if (!resp.ok) throw new Error(`Failed to get branches: ${resp.statusText}`);
             const data = await resp.json();
             branchData = Array.isArray(data) ? data : (data.branches || []);
@@ -77,11 +100,37 @@ const GitManager = (() => {
      */
     async function clone(url) {
         if (!url) {
-            url = await promptDialog('Clone Repository', 'Enter repository URL:', 'https://github.com/user/repo.git');
-            if (!url) return;
+            // Load saved token from config
+            let savedToken = '';
+            try {
+                const cfgResp = await fetch('/api/config');
+                if (cfgResp.ok) {
+                    const cfg = await cfgResp.json();
+                    savedToken = cfg.github_token || '';
+                }
+            } catch (_e) {}
+
+            const tokenHint = savedToken ? '已配置' : '公开仓库无需填写';
+            const result = await showCloneDialog(savedToken, tokenHint);
+            if (!result) return;
+            url = result.url;
+            if (result.token) {
+                // Save token to config
+                try {
+                    await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ github_token: result.token })
+                    });
+                } catch (_e) {}
+                // Inject token into URL if it's a GitHub HTTPS URL
+                if (result.token && url.includes('github.com') && !url.includes('@')) {
+                    url = url.replace('https://', `https://${result.token}@`);
+                }
+            }
         }
 
-        showToast('Cloning repository...', 'info');
+        showToast('正在克隆仓库...', 'info');
 
         try {
             const resp = await fetch('/api/git/clone', {
@@ -89,10 +138,23 @@ const GitManager = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
             });
-            if (!resp.ok) throw new Error(`Clone failed: ${resp.statusText}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Clone failed: ${resp.statusText}`);
+            }
             const data = await resp.json();
 
-            showToast('Repository cloned successfully', 'success');
+            showToast('克隆成功', 'success');
+
+            // Navigate into cloned folder
+            const clonePath = data.path;
+            if (window.FileManager && clonePath) {
+                // clonePath is relative from server, prepend /workspace for FileManager
+                const fullPath = '/workspace/' + clonePath.replace(/^\\//, '');
+                await window.FileManager.openFolder(fullPath);
+            }
+
+            // No need to git init — cloned repos already have .git
 
             // Refresh file list
             if (window.FileManager) {
@@ -102,8 +164,94 @@ const GitManager = (() => {
 
             return data;
         } catch (err) {
-            showToast(`Clone error: ${err.message}`, 'error');
+            showToast('克隆失败: ' + err.message, 'error');
         }
+    }
+
+    /**
+     * Show clone dialog with URL + token fields
+     */
+    function showCloneDialog(savedToken, tokenHint) {
+        return new Promise((resolve) => {
+            if (window.showDialog) {
+                const bodyHTML = `
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <div>
+                            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">仓库地址</label>
+                            <input type="text" id="clone-url-input" placeholder="https://github.com/user/repo.git" autocomplete="off"
+                                style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #555;background:#2a2a2a;color:#ddd;font-size:13px;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">GitHub Token (${tokenHint})</label>
+                            <input type="password" id="clone-token-input" placeholder="${savedToken ? '已配置，留空使用已保存' : '公开仓库无需填写'}"
+                                style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #555;background:#2a2a2a;color:#ddd;font-size:13px;box-sizing:border-box;">
+                        </div>
+                    </div>`;
+                window.showDialog('📥 克隆仓库', bodyHTML, [
+                    { text: '取消', value: 'cancel', class: 'btn-cancel' },
+                    { text: '克隆', value: 'ok', class: 'btn-confirm' },
+                ]).then(result => {
+                    if (!result.confirmed) { resolve(null); return; }
+                    const urlInput = document.getElementById('clone-url-input');
+                    const tokenInput = document.getElementById('clone-token-input');
+                    const url = urlInput ? urlInput.value.trim() : '';
+                    const token = tokenInput ? tokenInput.value.trim() : '';
+                    if (!url) { resolve(null); return; }
+                    resolve({ url, token });
+                });
+                return;
+            }
+            // Fallback
+            const url = window.prompt('Clone Repository URL:', 'https://github.com/user/repo.git');
+            if (url) resolve({ url, token: '' });
+            else resolve(null);
+        });
+    }
+
+    /**
+     * Show token config dialog
+     */
+    function showTokenConfig() {
+        (async () => {
+            let savedToken = '';
+            try {
+                const cfgResp = await fetch('/api/config');
+                if (cfgResp.ok) {
+                    const cfg = await cfgResp.json();
+                    savedToken = cfg.github_token || '';
+                }
+            } catch (_e) {}
+
+            const bodyHTML = `
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <p style="font-size:12px;color:var(--text-muted);line-height:1.4;">
+                        Token 用于克隆/拉取私有仓库，公开仓库无需配置。
+                    </p>
+                    <input type="password" id="token-config-input" placeholder="ghp_xxxxxxxxxxxx"
+                        style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #555;background:#2a2a2a;color:#ddd;font-size:13px;box-sizing:border-box;"
+                        value="${window.escapeHTML ? window.escapeHTML(savedToken) : savedToken}">
+                </div>`;
+
+            if (window.showDialog) {
+                const result = await window.showDialog('🔑 配置 GitHub Token', bodyHTML, [
+                    { text: '取消', value: 'cancel', class: 'btn-cancel' },
+                    { text: '保存', value: 'ok', class: 'btn-confirm' },
+                ]);
+                if (!result.confirmed) return;
+                const input = document.getElementById('token-config-input');
+                const token = input ? input.value.trim() : '';
+                try {
+                    await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ github_token: token })
+                    });
+                    window.showToast('Token 已保存', 'success', 2000);
+                } catch (_e) {
+                    window.showToast('保存失败', 'error', 2000);
+                }
+            }
+        })();
     }
 
     // ── API: Pull ──────────────────────────────────────────────────
@@ -115,10 +263,11 @@ const GitManager = (() => {
         showToast('Pulling changes...', 'info');
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/pull', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
+                body: JSON.stringify({ path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Pull failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -146,7 +295,8 @@ const GitManager = (() => {
         showToast('Pushing changes...', 'info');
 
         try {
-            const body = {};
+            const gitCwd = getGitCwd();
+            const body = { path: gitCwd };
             if (setUpstream !== undefined) {
                 body.set_upstream = setUpstream;
             }
@@ -207,10 +357,11 @@ const GitManager = (() => {
         if (typeof paths === 'string') paths = [paths];
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths })
+                body: JSON.stringify({ paths, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Git add failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -228,10 +379,11 @@ const GitManager = (() => {
      */
     async function addAll() {
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: ['.'] })
+                body: JSON.stringify({ paths: ['.'], path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Git add all failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -262,10 +414,11 @@ const GitManager = (() => {
         }
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/commit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Commit failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -309,10 +462,11 @@ const GitManager = (() => {
         showToast(`Checking out ${branch}...`, 'info');
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch })
+                body: JSON.stringify({ branch, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Checkout failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -351,10 +505,11 @@ const GitManager = (() => {
         }
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/stash', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, ...options })
+                body: JSON.stringify({ action, path: gitCwd, ...options })
             });
             if (!resp.ok) throw new Error(`Stash ${action} failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -383,9 +538,14 @@ const GitManager = (() => {
      */
     async function diff(filepath) {
         try {
-            const url = filepath
-                ? `/api/git/diff?path=${encodeURIComponent(filepath)}`
-                : '/api/git/diff';
+            const gitCwd = getGitCwd();
+            let url;
+            if (filepath) {
+                url = `/api/git/diff?path=${encodeURIComponent(filepath)}&cwd=${encodeURIComponent(gitCwd)}`;
+            } else {
+                const params = gitCwd ? `?cwd=${encodeURIComponent(gitCwd)}` : '';
+                url = `/api/git/diff${params}`;
+            }
             const resp = await fetch(url);
             if (!resp.ok) throw new Error(`Diff failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -699,6 +859,7 @@ const GitManager = (() => {
             'git-push': () => push(),
             'git-sync': () => sync(),
             'git-refresh': () => refresh(),
+            'git-token-btn': () => showTokenConfig(),
             'git-commit-btn': () => commit(),
             'git-add-all-btn': () => addAll(),
             'git-stash-btn': () => stash(),

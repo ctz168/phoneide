@@ -140,6 +140,23 @@ class ServerService : Service() {
                 }
                 try { bm.writeResolvConf() } catch (_: Exception) {}
 
+                // Always re-copy IDE files from assets to host dir on every start
+                // This ensures new versions of CSS/JS/vendor files are deployed
+                try {
+                    copyIDEFromAssets(pm.filesDir)
+                    bm.setupIDEFiles()
+                    emitLog("[INFO] IDE files synced from assets")
+                } catch (e: Exception) {
+                    emitLog("[WARN] IDE file sync: ${e.message}")
+                }
+
+                // Ensure /root/phoneide is a git repo for code updates
+                try {
+                    ensureGitRepo(pm)
+                } catch (e: Exception) {
+                    emitLog("[WARN] Git init: ${e.message}")
+                }
+
                 if (stopping) return@Thread
 
                 // Check if port already in use
@@ -163,7 +180,7 @@ class ServerService : Service() {
                 emitLog("[INFO] Starting Flask server via proot...")
                 updateNotificationRunning()
 
-                val command = "cd /root/phoneide && python3 server.py 2>&1"
+                val command = "cd /root/phoneide && PHONEIDE_VERSION=${PhoneIDEApp.VERSION_NAME} python3 server.py 2>&1"
                 serverProcess = pm.startProotProcess(command)
 
                 if (serverProcess == null) {
@@ -308,6 +325,61 @@ class ServerService : Service() {
         synchronized(logLock) {
             return logBuffer.toString().lines().takeLast(maxLines).joinToString("\n")
         }
+    }
+
+    // ================================================================
+    // IDE File Sync (copy from APK assets to host dir + rootfs)
+    // ================================================================
+
+    private fun copyIDEFromAssets(filesDir: String) {
+        val hostIdeDir = "$filesDir/phoneide"
+        java.io.File(hostIdeDir).mkdirs()
+        val assetManager = assets
+        copyAssetDirRecursive("ide", java.io.File(hostIdeDir))
+    }
+
+    private fun copyAssetDirRecursive(assetPath: String, destDir: java.io.File) {
+        val files = assets.list(assetPath) ?: return
+        for (file in files) {
+            val srcPath = "$assetPath/$file"
+            val destFile = java.io.File(destDir, file)
+            try {
+                // Try opening as file first
+                val inputStream = assets.open(srcPath)
+                java.io.FileOutputStream(destFile).use { out ->
+                    inputStream.copyTo(out)
+                }
+                inputStream.close()
+            } catch (_: Exception) {
+                // It's a directory - recurse
+                destDir.mkdirs()
+                copyAssetDirRecursive(srcPath, destFile)
+            }
+        }
+    }
+
+    /**
+     * Ensure /root/phoneide is a git repo so code updates (git pull) work.
+     * Does NOT disturb existing tracked files.
+     */
+    private fun ensureGitRepo(pm: ProcessManager) {
+        val check = pm.runInProotSync(
+            "cd /root/phoneide && git rev-parse --is-inside-work-tree 2>/dev/null", 10
+        )
+        if (check.contains("true")) {
+            emitLog("[INFO] Git repo already initialized")
+            return
+        }
+        // Not a git repo - initialize and add remote
+        pm.runInProotSync(
+            "cd /root/phoneide && " +
+            "git init && " +
+            "git remote add origin https://github.com/ctz168/phoneide.git 2>/dev/null; " +
+            "git fetch --depth=1 origin main 2>/dev/null; " +
+            "git checkout main 2>/dev/null || true",
+            60
+        )
+        emitLog("[INFO] Git repo initialized for code updates")
     }
 
     private fun acquireWakeLock() {

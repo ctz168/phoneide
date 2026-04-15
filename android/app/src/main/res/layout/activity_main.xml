@@ -2,7 +2,8 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D1117">
+    android:background="#0D1117"
+    android:fitsSystemWindows="true">
 
     <!-- Main WebView -->
     <WebView
@@ -79,13 +80,15 @@
     <LinearLayout
         android:id="@+id/server_management_bar"
         android:layout_width="match_parent"
-        android:layout_height="44dp"
+        android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
         android:background="#161B22"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp">
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
 
         <!-- Server Status Indicator -->
         <LinearLayout
@@ -111,6 +114,33 @@
                 android:text="@string/server_status_stopped"
                 android:textColor="#8B949E"
                 android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Terminal Button -->
+        <LinearLayout
+            android:id="@+id/btn_terminal"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/btn_terminal"
+                android:src="@android:drawable/ic_menu_manage" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_terminal"
+                android:textColor="#C9D1D9"
+                android:textSize="9sp" />
         </LinearLayout>
 
         <!-- Restart Button -->
@@ -140,34 +170,7 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Logs Button -->
-        <LinearLayout
-            android:id="@+id/btn_logs"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="4dp">
-
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:contentDescription="@string/btn_logs"
-                android:src="@android:drawable/ic_menu_agenda" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_logs"
-                android:textColor="#C9D1D9"
-                android:textSize="9sp" />
-        </LinearLayout>
-
-        <!-- Update Button -->
+        <!-- Update Button (git pull code update) -->
         <LinearLayout
             android:id="@+id/btn_update"
             android:layout_width="0dp"
@@ -184,7 +187,7 @@
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:contentDescription="@string/btn_update"
-                android:src="@android:drawable/ic_menu_save" />
+                android:src="@android:drawable/ic_menu_sort_by_size" />
 
             <TextView
                 android:layout_width="wrap_content"

@@ -1138,6 +1138,15 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
                         </select>
                     </label>
                     <label>
+                        <span>API Type</span>
+                        <select id="llm-api-type">
+                            <option value="openai"${(config.api_type || 'openai') === 'openai' ? ' selected' : ''}>OpenAI Compatible</option>
+                            <option value="azure"${config.api_type === 'azure' ? ' selected' : ''}>Azure OpenAI</option>
+                            <option value="ollama"${config.api_type === 'ollama' ? ' selected' : ''}>Ollama</option>
+                            <option value="custom"${config.api_type === 'custom' ? ' selected' : ''}>Custom</option>
+                        </select>
+                    </label>
+                    <label>
                         <span>API Key</span>
                         <input type="password" id="llm-api-key" placeholder="sk-..." value="${escapeAttr(config.api_key || '')}">
                         ${config.api_key_masked ? `<span class="hint">Current: ${escapeHTML(config.api_key_masked)}</span>` : ''}
@@ -1165,6 +1174,7 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
                 </div>
                 <div class="chat-settings-footer">
                     <button class="btn-cancel" id="llm-settings-cancel">Cancel</button>
+                    <button class="btn-test" id="llm-settings-test" style="padding:8px 16px;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;background:var(--bg-hover);color:var(--text-secondary);">Test</button>
                     <button class="btn-confirm" id="llm-settings-save">Save</button>
                 </div>
             </div>
@@ -1180,6 +1190,7 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
         overlay.querySelector('#llm-settings-save').addEventListener('click', async () => {
             const newConfig = {
                 provider:     overlay.querySelector('#llm-provider').value,
+                api_type:     overlay.querySelector('#llm-api-type').value,
                 api_key:      overlay.querySelector('#llm-api-key').value,
                 api_base:     overlay.querySelector('#llm-api-base').value.trim(),
                 model:        overlay.querySelector('#llm-model').value.trim(),
@@ -1192,6 +1203,39 @@ Do NOT execute any tools. Only generate the plan.\n\nUser request: `;
             if (result) {
                 showToast('LLM settings saved', 'success');
                 removeSettingsDialog();
+            }
+        });
+        // Test connection button
+        overlay.querySelector('#llm-settings-test').addEventListener('click', async () => {
+            const testBtn = overlay.querySelector('#llm-settings-test');
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
+            try {
+                // Save current values first
+                const testConfig = {
+                    provider:     overlay.querySelector('#llm-provider').value,
+                    api_type:     overlay.querySelector('#llm-api-type').value,
+                    api_key:      overlay.querySelector('#llm-api-key').value,
+                    api_base:     overlay.querySelector('#llm-api-base').value.trim(),
+                    model:        overlay.querySelector('#llm-model').value.trim(),
+                    temperature:  parseFloat(overlay.querySelector('#llm-temperature').value) || 0.7,
+                    max_tokens:   parseInt(overlay.querySelector('#llm-max-tokens').value, 10) || 4096,
+                    system_prompt: overlay.querySelector('#llm-system-prompt').value.trim()
+                };
+                await saveLLMConfig(testConfig);
+
+                const resp = await fetch('/api/llm/test', { method: 'POST' });
+                const data = await resp.json();
+                if (data.ok) {
+                    showToast(`Connection OK: ${data.model || ''}`, 'success');
+                } else {
+                    showToast(`Connection failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (err) {
+                showToast('Test error: ' + err.message, 'error');
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = 'Test';
             }
         });
 
