@@ -2672,8 +2672,8 @@ def update_apply():
         # git stash any local changes
         stash_result = git_cmd('stash', cwd=SERVER_DIR)
 
-        # Pull latest from origin main
-        pull_result = git_cmd('pull origin main', cwd=SERVER_DIR, timeout=120)
+        # Pull latest from origin main (skip SSL verify for proot compatibility)
+        pull_result = git_cmd('pull -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=120)
         if not pull_result['ok']:
             # Restore stash on failure
             git_cmd('stash pop', cwd=SERVER_DIR)
