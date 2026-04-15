@@ -135,7 +135,7 @@ jobs:
     - name: Get version info
       id: version
       run: |
-        VERSION=$(grep 'versionName' android/app/build.gradle | head -1 | sed "s/.*"\([^"]*\)".*/\1/")
+        VERSION=$(grep 'versionName' android/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Building version: $VERSION"
 
