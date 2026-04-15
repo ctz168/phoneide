@@ -2657,34 +2657,39 @@ def update_check():
 @app.route('/api/update/apply', methods=['POST'])
 @handle_error
 def update_apply():
-    """Pull latest code from GitHub and restart server."""
+    """Fetch latest code from GitHub and restart server."""
     try:
         # Check if SERVER_DIR is a git repo
-        if not os.path.exists(os.path.join(SERVER_DIR, '.git')):
-            return jsonify({'error': 'Server directory is not a git repository'}), 400
+        git_dir = os.path.join(SERVER_DIR, '.git')
+        if not os.path.exists(git_dir):
+            return jsonify({'error': 'Not a git repository: ' + SERVER_DIR}), 400
 
-        # Ensure SERVER_DIR is writable
+        # Ensure SERVER_DIR and .git are writable
         try:
             subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}', shell=True, capture_output=True, timeout=15)
         except Exception:
             pass
 
-        # git stash any local changes
-        stash_result = git_cmd('stash', cwd=SERVER_DIR)
+        # Step 1: fetch remote refs
+        fetch_result = git_cmd('fetch -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=120)
+        if not fetch_result['ok']:
+            detail = fetch_result['stderr'] or fetch_result['stdout'] or 'unknown'
+            # If fetch failed, try with explicit env var
+            fetch_result2 = subprocess.run(
+                f'git -C {shlex_quote(SERVER_DIR)} -c http.sslVerify=false -c http.proxy= fetch origin main',
+                shell=True, capture_output=True, text=True, timeout=120
+            )
+            if fetch_result2.returncode != 0:
+                detail2 = fetch_result2.stderr or fetch_result2.stdout or 'unknown'
+                return jsonify({'error': f'Git fetch failed: {detail}', 'detail2': detail2}), 500
 
-        # Pull latest from origin main (skip SSL verify for proot compatibility)
-        pull_result = git_cmd('pull -c http.sslVerify=false origin main', cwd=SERVER_DIR, timeout=120)
-        if not pull_result['ok']:
-            # Restore stash on failure
-            git_cmd('stash pop', cwd=SERVER_DIR)
-            detail = pull_result['stderr'] or pull_result['stdout'] or 'unknown error'
-            return jsonify({'error': f'Git pull failed: {detail}', 'stdout': pull_result['stdout']}), 500
+        # Step 2: reset local to match remote (no merge conflicts)
+        reset_result = git_cmd('reset --hard origin/main', cwd=SERVER_DIR, timeout=30)
+        if not reset_result['ok']:
+            detail = reset_result['stderr'] or reset_result['stdout'] or 'unknown'
+            return jsonify({'error': f'Git reset failed: {detail}'}), 500
 
-        # Restore stash
-        if stash_result['ok']:
-            git_cmd('stash pop', cwd=SERVER_DIR)
-
-        _log_write(f'[UPDATE] Pulled latest code: {pull_result["stdout"][:200]}')
+        _log_write(f'[UPDATE] Fetched and reset to origin/main: {reset_result["stdout"][:200]}')
 
         # Restart server
         marker = os.path.join(CONFIG_DIR, 'restart_marker.json')
@@ -2713,7 +2718,7 @@ def update_apply():
         return jsonify({
             'ok': True,
             'message': 'Update applied, server restarting...',
-            'pull_output': pull_result['stdout'][:500],
+            'pull_output': reset_result['stdout'][:500],
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
