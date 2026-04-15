@@ -32,6 +32,7 @@ CORS(app)
 WORKSPACE = os.environ.get('PHONEIDE_WORKSPACE', os.path.expanduser('~/phoneide_workspace'))
 PORT = int(os.environ.get('PHONEIDE_PORT', 1239))
 HOST = os.environ.get('PHONEIDE_HOST', '0.0.0.0')
+APP_VERSION = os.environ.get('PHONEIDE_VERSION', '3.0.32')
 
 # Config file
 CONFIG_DIR = os.path.expanduser('~/.phoneide')
@@ -2599,6 +2600,16 @@ def update_check():
         # Extract version number from tag (e.g. "v3.0.29" -> "3.0.29")
         version = latest_tag.lstrip('v')
 
+        # Compare versions: only update if release version > current version
+        try:
+            from packaging.version import Version
+            current_ver = Version(APP_VERSION)
+            release_ver = Version(version)
+            apk_is_newer = release_ver > current_ver
+        except Exception:
+            # Fallback: string comparison
+            apk_is_newer = version != APP_VERSION
+
         # Find the release APK asset
         apk_url = ''
         apk_size = 0
@@ -2646,14 +2657,14 @@ def update_check():
             pass
 
         # Check if update available (APK or code)
-        apk_update = bool(apk_url)
+        apk_update = bool(apk_url) and apk_is_newer
         update_available = apk_update or code_update
 
         return jsonify({
             'update_available': update_available,
             'apk_update': apk_update,
             'code_update': code_update,
-            'current_version': '3.0.1',
+            'current_version': APP_VERSION,
             'new_version': version,
             'latest_tag': latest_tag,
             'release_name': release_name,
@@ -2670,10 +2681,10 @@ def update_check():
         })
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': '3.0.0'})
-        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': '3.0.0'})
+            return jsonify({'error': 'No releases found', 'update_available': False, 'current_version': APP_VERSION})
+        return jsonify({'error': f'GitHub API error: {e.code}', 'update_available': False, 'current_version': APP_VERSION})
     except Exception as e:
-        return jsonify({'error': str(e), 'update_available': False, 'current_version': '3.0.0'})
+        return jsonify({'error': str(e), 'update_available': False, 'current_version': APP_VERSION})
 
 @app.route('/api/update/apply', methods=['POST'])
 @handle_error

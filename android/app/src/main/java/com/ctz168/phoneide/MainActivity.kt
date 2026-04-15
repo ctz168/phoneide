@@ -605,8 +605,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 val request = Request.Builder()
                     .url("${PhoneIDEApp.SERVER_URL}/api/server/logs/stream")
+                    .readTimeout(120, TimeUnit.SECONDS) // Long timeout for SSE stream
                     .build()
-                val response = httpClient.newCall(request).execute()
+                val response = updateHttpClient.newCall(request).execute()
 
                 if (!response.isSuccessful) {
                     withContext(Dispatchers.Main) {
@@ -619,9 +620,23 @@ class MainActivity : AppCompatActivity() {
                 var line: String?
                 while (reader.readLine().also { line = it } != null && isActive) {
                     val logLine = line ?: continue
+                    // Parse SSE data: extract JSON text field
+                    val displayText = if (logLine.startsWith("data: ")) {
+                        try {
+                            val json = org.json.JSONObject(logLine.removePrefix("data: "))
+                            val time = json.optString("time", "")
+                            val text = json.optString("text", "")
+                            if (time.isNotEmpty()) "[$time] $text" else text
+                        } catch (_: Exception) {
+                            logLine.removePrefix("data: ")
+                        }
+                    } else {
+                        logLine
+                    }
+                    if (displayText.isBlank()) continue
                     withContext(Dispatchers.Main) {
                         if (dialog.isShowing) {
-                            logTextView.append("$logLine\n")
+                            logTextView.append("$displayText\n")
                             // Auto-scroll to bottom
                             scrollView.post {
                                 scrollView.fullScroll(android.widget.ScrollView.FOCUS_DOWN)
@@ -651,7 +666,6 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             try {
                 withContext(Dispatchers.Main) {
-                    // Show toast
                     android.widget.Toast.makeText(
                         this@MainActivity,
                         getString(R.string.update_checking),
@@ -659,16 +673,28 @@ class MainActivity : AppCompatActivity() {
                     ).show()
                 }
 
-                // POST to /api/update/check
+                // POST to /api/update/check using longer timeout
                 val responseBody = withContext(Dispatchers.IO) {
-                    postToServerWithResponse("/api/update/check")
+                    try {
+                        val request = Request.Builder()
+                            .url("${PhoneIDEApp.SERVER_URL}/api/update/check")
+                            .post(RequestBody.create(null, byteArrayOf()))
+                            .build()
+                        val response = updateHttpClient.newCall(request).execute()
+                        val body = response.body?.string()
+                        response.close()
+                        body
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Update check failed", e)
+                        null
+                    }
                 }
 
                 if (responseBody == null) {
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(
                             this@MainActivity,
-                            "Could not check for updates",
+                            "Could not check for updates. Check network.",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -680,9 +706,11 @@ class MainActivity : AppCompatActivity() {
                 val currentVersion = json.optString("current_version", "unknown")
                 val newVersion = json.optString("new_version", "")
                 val releaseNotes = json.optString("release_notes", "")
+                val apkUpdate = json.optBoolean("apk_update", false)
+                val apkUrl = json.optString("apk_url", "")
+                val apkSize = json.optString("apk_size_human", "")
 
                 if (!updateAvailable) {
-                    // Up to date
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle(getString(R.string.update_current))
                         .setMessage("Current version: $currentVersion")
@@ -692,18 +720,38 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // Update available - show dialog
-                MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle(getString(R.string.update_available))
-                    .setMessage(
-                        "New version: $newVersion\n" +
-                        "Current version: $currentVersion\n\n" +
-                        "Release notes:\n$releaseNotes"
-                    )
-                    .setPositiveButton("Update Now") { _, _ ->
-                        applyUpdate(newVersion)
+                val message = buildString {
+                    append("New version: $newVersion\n")
+                    append("Current version: $currentVersion\n\n")
+                    if (apkUpdate && apkUrl.isNotEmpty()) {
+                        append("APK Update available (${apkSize})\n")
                     }
-                    .setNegativeButton("Later", null)
-                    .show()
+                    if (releaseNotes.isNotEmpty()) {
+                        append("\nRelease notes:\n$releaseNotes")
+                    }
+                }
+
+                if (apkUpdate && apkUrl.isNotEmpty()) {
+                    // APK update: download and install
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(getString(R.string.update_available))
+                        .setMessage(message)
+                        .setPositiveButton("Download & Install") { _, _ ->
+                            downloadAndInstallApkInternal(apkUrl, newVersion)
+                        }
+                        .setNegativeButton("Later", null)
+                        .show()
+                } else {
+                    // Code-only update (git pull)
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(getString(R.string.update_available))
+                        .setMessage(message)
+                        .setPositiveButton("Update Now") { _, _ ->
+                            applyCodeUpdate(newVersion)
+                        }
+                        .setNegativeButton("Later", null)
+                        .show()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Update check failed", e)
                 withContext(Dispatchers.Main) {
@@ -720,20 +768,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("SetTextI18n")
-    private fun applyUpdate(version: String) {
+    private fun applyCodeUpdate(version: String) {
         btnUpdate.isEnabled = false
 
-        // Show progress dialog
         val progressDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.updating))
-            .setMessage("Downloading and applying update to $version...\n\nPlease wait, this may take a moment.")
+            .setMessage("Updating code to $version...\n\nPlease wait.")
             .setCancelable(false)
             .create()
         progressDialog.show()
 
         scope.launch {
             try {
-                // POST to /api/update/apply
                 val success = withContext(Dispatchers.IO) {
                     postToServer("/api/update/apply", useUpdateClient = true)
                 }
@@ -743,17 +789,13 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (success) {
-                    // Restart server and reload
                     withContext(Dispatchers.Main) {
                         updateStatusIndicator(false)
                         statusLabel.text = getString(R.string.server_restarting)
-
                         stopServerService()
                         startServerService()
-
                         showLoading("Server restarting after update...")
 
-                        // Poll until server is back
                         scope.launch {
                             var attempts = 0
                             while (attempts < 30 && isActive) {
@@ -767,10 +809,9 @@ class MainActivity : AppCompatActivity() {
                             hideAllOverlays()
                             loadIDE()
                             updateStatusIndicator(true)
-
                             android.widget.Toast.makeText(
                                 this@MainActivity,
-                                "Updated to $version successfully!",
+                                "Updated to $version!",
                                 android.widget.Toast.LENGTH_LONG
                             ).show()
                         }
@@ -778,7 +819,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle("Update Failed")
-                        .setMessage("The update could not be applied. Please try again or check server logs.")
+                        .setMessage("Could not apply update. Try again.")
                         .setPositiveButton("OK", null)
                         .show()
                 }
@@ -882,30 +923,45 @@ class MainActivity : AppCompatActivity() {
     // ========================
 
     private fun requestRuntimePermissions() {
+        val permsToRequest = mutableListOf<String>()
+
         // POST_NOTIFICATIONS is runtime permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
             ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    1001
-                )
+                permsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
+        // REQUEST_INSTALL_PACKAGES — needed for APK auto-update on Android 8+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!packageManager.canRequestPackageInstalls()) {
+                try {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (permsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permsToRequest.toTypedArray(),
+                1001
+            )
+        }
+
         // Request battery optimization exemption (critical for background service survival)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent()
-            val packageName = "com.ctz168.phoneide"
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val intent = Intent()
                 intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
                 intent.data = Uri.parse("package:$packageName")
-            }
-            try {
-                // Don't show the intent directly — just mark that user should do it.
-                // The "About" dialog already mentions this tip.
+                startActivity(intent)
             } catch (_: Exception) {}
         }
     }

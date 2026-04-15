@@ -200,18 +200,7 @@
         </div>
     </div>
 
-    <!-- Server Management Bar -->
-    <div id="server-mgmt-bar">
-        <div id="server-status-indicator">
-            <span id="server-status-dot" class="status-dot running" title="Server running"></span>
-            <span id="server-status-text">Running</span>
-        </div>
-        <div id="server-mgmt-actions">
-            <button id="btn-server-restart" title="Restart Server">🔄 Restart</button>
-            <button id="btn-server-logs" title="Server Logs">📋 Logs</button>
-            <button id="btn-check-updates" title="Check Updates">⬆ Updates</button>
-        </div>
-    </div>
+    <!-- Server Management Bar: removed (Android native bar provides this) -->
 
     <!-- Log Viewer Panel -->
     <div id="log-viewer-panel" class="hidden">
@@ -258,98 +247,12 @@
     <!-- Toast notification -->
     <div id="toast" class="hidden"></div>
 
-    <!-- Server Management Styles -->
+    <!-- Server Management Styles (web mgmt bar removed, Android native bar used instead) -->
     <style>
-        /* Server Management Bar */
-        #server-mgmt-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 36px;
-            background: var(--bg-surface, #1a1a2e);
-            border-top: 1px solid var(--border, #2a2a4a);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 12px;
-            z-index: 400;
-            font-size: 11px;
-            color: var(--text-secondary, #aaa);
-            box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
-            gap: 8px;
-        }
-        #server-status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            flex-shrink: 0;
-        }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            flex-shrink: 0;
-        }
-        .status-dot.running {
-            background: var(--green, #50fa7b);
-            box-shadow: 0 0 6px var(--green, #50fa7b);
-            animation: pulse-green 2s ease-in-out infinite;
-        }
-        .status-dot.stopped {
-            background: var(--red, #ff5555);
-            box-shadow: 0 0 6px var(--red, #ff5555);
-        }
-        .status-dot.checking {
-            background: var(--yellow, #f1fa8c);
-            animation: spin 1s linear infinite;
-        }
-        @keyframes pulse-green {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        #server-status-text {
-            font-family: var(--font-mono, monospace);
-            font-size: 10px;
-        }
-        #server-mgmt-actions {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-        #server-mgmt-actions button {
-            border: none;
-            background: none;
-            color: var(--text-secondary, #aaa);
-            font-size: 11px;
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: var(--radius-sm, 4px);
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-family: var(--font-mono, monospace);
-            transition: background 0.15s, color 0.15s;
-        }
-        #server-mgmt-actions button:hover {
-            background: var(--bg-hover, #2a2a4a);
-            color: var(--text-primary, #f8f8f2);
-        }
-        #server-mgmt-actions button:active {
-            background: var(--bg-active, #3a3a5a);
-            transform: scale(0.95);
-        }
-
         /* Log Viewer Panel */
         #log-viewer-panel {
             position: fixed;
-            bottom: 36px;
+            bottom: 0;
             left: 0;
             right: 0;
             height: 250px;
