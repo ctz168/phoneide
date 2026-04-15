@@ -15,7 +15,7 @@ import java.io.InputStreamReader
  *   - Server mode (buildServerCommand): for long-lived Flask server
  *   - Login mode (buildLoginCommand): for interactive terminal shell
  */
-class ProcessManager(private val filesDir: String, private val nativeLibDir: String) {
+class ProcessManager(val filesDir: String, val nativeLibDir: String) {
 
     companion object {
         private const val TAG = "ProcessManager"
