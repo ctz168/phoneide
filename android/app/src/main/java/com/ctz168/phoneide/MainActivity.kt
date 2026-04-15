@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "APK update failed", e)
             withContext(Dispatchers.Main) {
                 progressDialog.dismiss()
-                MaterialAlertDialogBuilder(this)
+                MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("Update Failed")
                     .setMessage("Error: ${e.message}")
                     .setPositiveButton("OK", null)
