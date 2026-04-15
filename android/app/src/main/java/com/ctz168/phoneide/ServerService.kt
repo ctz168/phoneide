@@ -33,11 +33,11 @@ class ServerService : Service() {
         const val CHANNEL_ID = "phoneide_server"
         const val NOTIFICATION_ID = 1
 
-        var isRunning = false
+        @Volatile var isRunning = false
             private set
         private var instance: ServerService? = null
         private val mainHandler = Handler(Looper.getMainLooper())
-        private val logListeners = mutableListOf<(String) -> Unit>()
+        private val logListeners = java.util.concurrent.CopyOnWriteArrayList<(String) -> Unit>()
 
         fun isProcessAlive(): Boolean {
             val inst = instance ?: return false
@@ -49,11 +49,15 @@ class ServerService : Service() {
         fun removeLogListener(listener: (String) -> Unit) { logListeners.remove(listener) }
 
         fun start(context: Context) {
-            val intent = Intent(context, ServerService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                val intent = Intent(context, ServerService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start server service", e)
             }
         }
 
@@ -79,9 +83,9 @@ class ServerService : Service() {
         super.onCreate()
         instance = this
         createNotificationChannel()
-        val filesDir = applicationContext.filesDir.absolutePath
-        val nativeLibDir = applicationContext.applicationInfo.nativeLibraryDir
-        processManager = ProcessManager(filesDir, nativeLibDir)
+        // Use shared instance from Application (matching stableclaw pattern)
+        processManager = (applicationContext as? PhoneIDEApp)?.processManager
+            ?: ProcessManager(applicationContext.filesDir.absolutePath, applicationContext.applicationInfo.nativeLibraryDir)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -308,9 +312,15 @@ class ServerService : Service() {
 
     private fun acquireWakeLock() {
         releaseWakeLock()
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PhoneIDE::ServerWakeLock")
-        wakeLock?.acquire(24 * 60 * 60 * 1000L)
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PhoneIDE::ServerWakeLock")
+            wakeLock?.acquire(24 * 60 * 60 * 1000L)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "WAKE_LOCK permission not granted, skipping wake lock")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire wake lock: ${e.message}")
+        }
     }
 
     private fun releaseWakeLock() {

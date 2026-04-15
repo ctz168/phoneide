@@ -1,12 +1,15 @@
 package com.ctz168.phoneide
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -23,6 +26,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -81,8 +86,25 @@ class MainActivity : AppCompatActivity() {
         // Initialize views
         initViews()
 
+        // Show crash log from previous session if any
+        val app = application as PhoneIDEApp
+        app.readAndClearCrashLog()?.let { crashLog ->
+            MaterialAlertDialogBuilder(this)
+                .setTitle("上次崩溃日志")
+                .setMessage("上次启动时 PhoneIDE 发生了异常崩溃，日志如下：\n\n${crashLog}")
+                .setPositiveButton("确定", null)
+                .setNeutralButton("重置配置") { _, _ ->
+                    app.setSetupComplete(false)
+                    recreate()
+                }
+                .show()
+        }
+
+        // Request runtime permissions
+        requestRuntimePermissions()
+
         // Check setup status
-        if (!(application as PhoneIDEApp).isSetupComplete()) {
+        if (!app.isSetupComplete()) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
@@ -250,11 +272,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startServerService() {
-        val intent = Intent(this, ServerService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        try {
+            ServerService.start(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start server service", e)
+            showError("启动服务失败: ${e.message}")
         }
     }
 
@@ -686,7 +708,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopServerService() {
-        stopService(Intent(this, ServerService::class.java))
+        ServerService.stop(this)
+    }
+
+    // ========================
+    // Runtime Permissions
+    // ========================
+
+    private fun requestRuntimePermissions() {
+        // POST_NOTIFICATIONS is runtime permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+        }
+
+        // Request battery optimization exemption (critical for background service survival)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent()
+            val packageName = "com.ctz168.phoneide"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                intent.data = Uri.parse("package:$packageName")
+            }
+            try {
+                // Don't show the intent directly — just mark that user should do it.
+                // The "About" dialog already mentions this tip.
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onResume() {

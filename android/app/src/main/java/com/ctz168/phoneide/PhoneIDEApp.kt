@@ -5,6 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
 
 class PhoneIDEApp : Application() {
 
@@ -19,8 +23,12 @@ class PhoneIDEApp : Application() {
         const val PREF_SETUP_COMPLETE = "setup_complete"
 
         // Version
-        const val VERSION_NAME = "3.0.0"
-        const val VERSION_CODE = 3
+        const val VERSION_NAME = "3.0.1"
+        const val VERSION_CODE = 4
+
+        /** Last crash info saved by global exception handler. */
+        var lastCrashInfo: String? = null
+            private set
     }
 
     // Shared instances
@@ -32,6 +40,10 @@ class PhoneIDEApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // Install global crash handler to capture and log uncaught exceptions
+        installCrashHandler()
+
         createNotificationChannel()
 
         // Initialize managers with direct paths (matching stableclaw pattern)
@@ -45,6 +57,37 @@ class PhoneIDEApp : Application() {
             try { processManager.initialize() } catch (_: Exception) {}
             try { bootstrapManager.writeResolvConf() } catch (_: Exception) {}
         }.start()
+    }
+
+    /**
+     * Global uncaught exception handler.
+     * Writes crash trace to filesDir/crash.log so it can be retrieved
+     * and displayed on next launch for debugging.
+     */
+    private fun installCrashHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val sw = StringWriter()
+            sw.appendLine("=== PhoneIDE Crash ===")
+            sw.appendLine("Time: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())}")
+            sw.appendLine("Thread: ${thread.name}")
+            sw.appendLine("Version: $VERSION_NAME ($VERSION_CODE)")
+            sw.appendLine()
+            sw.appendLine(throwable.stackTraceToString())
+
+            val crashText = sw.toString()
+            lastCrashInfo = crashText
+            Log.e(TAG, "Uncaught exception:\n$crashText")
+
+            // Persist to file
+            try {
+                val crashFile = File(filesDir, "crash.log")
+                crashFile.writeText(crashText)
+            } catch (_: Exception) {}
+
+            // Let the system default handler show the "app stopped" dialog
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
     }
 
     private fun createNotificationChannel() {
@@ -70,6 +113,16 @@ class PhoneIDEApp : Application() {
     fun setSetupComplete(complete: Boolean) {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(PREF_SETUP_COMPLETE, complete).apply()
+    }
+
+    /** Read and clear the persisted crash log. */
+    fun readAndClearCrashLog(): String? {
+        val crashFile = File(filesDir, "crash.log")
+        return if (crashFile.exists()) {
+            val text = crashFile.readText()
+            crashFile.delete()
+            text
+        } else null
     }
 
     fun getIdeDir(): String = filesDir.absolutePath + "/phoneide"
