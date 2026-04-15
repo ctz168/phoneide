@@ -99,15 +99,25 @@ const FileManager = (() => {
      * Fetch the file list for a given directory path
      */
     async function loadFileList(path) {
+        // Empty string or undefined means root workspace — send no path param
+        const param = (path && path !== '/workspace') ? `?path=${encodeURIComponent(path)}` : '';
         path = normalizePath(path);
         currentPath = path;
         updateBreadcrumb(path);
 
         try {
-            const resp = await fetch(`/api/files/list?path=${encodeURIComponent(path)}`);
-            if (!resp.ok) throw new Error(`Failed to list files: ${resp.statusText}`);
+            const resp = await fetch(`/api/files/list${param}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to list files: ${resp.statusText}`);
+            }
             const data = await resp.json();
             renderFileTree(data.items || data || [], path);
+            // Update currentPath to match server's base if we loaded root
+            if (data.base && !param) {
+                currentPath = '';
+                updateBreadcrumb('');
+            }
             return data;
         } catch (err) {
             showToast(`Error loading files: ${err.message}`, 'error');

@@ -689,6 +689,126 @@ const TerminalManager = (() => {
         init();
     }
 
+    // ── API: Venv ─────────────────────────────────────────────────
+
+    /**
+     * Load venv info from backend and update UI
+     */
+    async function loadVenvInfo() {
+        try {
+            // Get venv list
+            const resp = await fetch('/api/venv/list');
+            if (!resp.ok) throw new Error(`Failed to load venv: ${resp.statusText}`);
+            const data = await resp.json();
+
+            const currentVenvEl = document.getElementById('current-venv');
+            if (currentVenvEl) {
+                if (data.current) {
+                    const name = data.current.split('/').pop();
+                    currentVenvEl.textContent = name;
+                } else {
+                    currentVenvEl.textContent = '未设置';
+                }
+            }
+
+            return data;
+        } catch (err) {
+            console.warn('Failed to load venv info:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Create a virtual environment
+     */
+    async function createVenv(path) {
+        if (!path) {
+            if (window.showPromptDialog) {
+                path = await new Promise(resolve => {
+                    window.showPromptDialog('创建虚拟环境', '输入路径 (留空使用默认 .venv):', '.venv', resolve);
+                });
+            } else {
+                path = prompt('Enter venv path:', '.venv');
+            }
+        }
+        if (!path) return;
+
+        showPanel();
+        appendOutput('$ Creating virtual environment...', 'status');
+
+        try {
+            const resp = await fetch('/api/venv/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            if (!resp.ok) throw new Error(`Failed to create venv: ${resp.statusText}`);
+
+            const data = await resp.json();
+            if (data.proc_id) {
+                currentProcId = data.proc_id;
+                pollSince = 0;
+                setRunningState(true);
+                streamOutput(data.proc_id);
+            } else {
+                appendOutput('Virtual environment created.', 'info');
+                showToast('虚拟环境已创建', 'success');
+            }
+
+            // Refresh venv info
+            await loadVenvInfo();
+            return data;
+        } catch (err) {
+            appendOutput(`Error: ${err.message}`, 'error');
+            showToast(`创建失败: ${err.message}`, 'error');
+            return { error: err.message };
+        }
+    }
+
+    /**
+     * Install a Python package
+     */
+    async function installPackage(packageName) {
+        if (!packageName) {
+            if (window.showPromptDialog) {
+                packageName = await new Promise(resolve => {
+                    window.showPromptDialog('安装包', '输入包名:', '', resolve);
+                });
+            } else {
+                packageName = prompt('Enter package name:');
+            }
+        }
+        if (!packageName) return;
+
+        showPanel();
+        appendOutput(`$ pip install ${packageName}...`, 'status');
+
+        try {
+            const resp = await fetch('/api/run/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code: `import subprocess; result = subprocess.run(['pip', 'install', '${packageName}'], capture_output=True, text=True); print(result.stdout); print(result.stderr)`,
+                    compiler: 'python3'
+                })
+            });
+            if (!resp.ok) throw new Error(`Failed: ${resp.statusText}`);
+
+            const data = await resp.json();
+            if (data.proc_id) {
+                currentProcId = data.proc_id;
+                pollSince = 0;
+                setRunningState(true);
+                streamOutput(data.proc_id);
+            }
+            return data;
+        } catch (err) {
+            appendOutput(`Error: ${err.message}`, 'error');
+            showToast(`安装失败: ${err.message}`, 'error');
+            return { error: err.message };
+        }
+    }
+
     // ── Public API ─────────────────────────────────────────────────
     return {
         execute,
@@ -703,6 +823,9 @@ const TerminalManager = (() => {
         getSelectedCompiler,
         showPanel,
         hidePanel,
+        loadVenvInfo,
+        createVenv,
+        installPackage,
 
         // Getters
         get currentProcId() { return currentProcId; },

@@ -496,7 +496,7 @@ const AppManager = (() => {
                         const data = await resp.json();
                         if (data.workspace) {
                             document.getElementById('workspace-path').value = data.workspace;
-                            if (window.FileManager) await FileManager.loadFileList('');
+                            if (window.FileManager) await FileManager.loadFileList();
                             showToast('工作区已切换', 'success');
                         }
                     } catch (err) {
@@ -519,6 +519,37 @@ const AppManager = (() => {
         if (newFolderBtn) {
             newFolderBtn.addEventListener('click', () => {
                 if (window.FileManager) FileManager.createFolder();
+            });
+        }
+    }
+
+    // ── Venv Buttons ──
+    function initVenv() {
+        const venvBtn = document.getElementById('venv-btn');
+        const createVenvBtn = document.getElementById('create-venv-btn');
+        const installPkgBtn = document.getElementById('install-pkg-btn');
+
+        if (venvBtn) {
+            venvBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.loadVenvInfo) {
+                    TerminalManager.loadVenvInfo().then(() => {
+                        showToast('虚拟环境信息已刷新', 'info', 1500);
+                    });
+                }
+            });
+        }
+        if (createVenvBtn) {
+            createVenvBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.createVenv) {
+                    TerminalManager.createVenv();
+                }
+            });
+        }
+        if (installPkgBtn) {
+            installPkgBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.installPackage) {
+                    TerminalManager.installPackage();
+                }
             });
         }
     }
@@ -1117,6 +1148,7 @@ const AppManager = (() => {
         initEditorToolbar();
         initToolbar();
         initFileToolbar();
+        initVenv();
         initAutoSave();
         initResize();
         initMobileFixes();
@@ -1145,8 +1177,8 @@ const AppManager = (() => {
             // Load compilers
             if (window.TerminalManager) await TerminalManager.loadCompilers();
 
-            // Load file tree
-            if (window.FileManager) await FileManager.loadFileList('');
+            // Load file tree (pass no path to use workspace root)
+            if (window.FileManager) await FileManager.loadFileList();
 
             // Load git status
             if (window.GitManager) await GitManager.refresh();
