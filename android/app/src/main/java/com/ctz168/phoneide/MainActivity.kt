@@ -567,6 +567,9 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val json = JSONObject(responseBody)
+                val errorMsg = json.optString("error", "")
+                val errorType = json.optString("error_type", "")
+                val errorHint = json.optString("message", "")
                 val updateAvailable = json.optBoolean("update_available", false)
                 val codeUpdate = json.optBoolean("code_update", false)
                 val currentVersion = json.optString("current_version", "unknown")
@@ -576,6 +579,26 @@ class MainActivity : AppCompatActivity() {
                 val remoteAuthor = json.optString("remote_author", "")
                 val remoteDate = json.optString("remote_date", "")
                 val commitsBehind = json.optInt("commits_behind", 0)
+
+                // If the server returned an error (e.g. network issue reaching GitHub),
+                // show the actual error details instead of silently claiming "up to date".
+                if (errorMsg.isNotEmpty() && !updateAvailable) {
+                    val hint = if (errorHint.isNotEmpty()) "\n\n$errorHint" else ""
+                    val detail = if (errorType == "network") {
+                        "GitHub API 连接失败\n${errorMsg}$hint\n\n可能原因：\n" +
+                        "• 手机网络不稳定\n" +
+                        "• GitHub 在当前网络被限制\n" +
+                        "• DNS 解析失败（proot 环境常见）"
+                    } else {
+                        "更新检查出错\n${errorMsg}"
+                    }
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle("检查更新失败")
+                        .setMessage(detail)
+                        .setPositiveButton("确定", null)
+                        .show()
+                    return@launch
+                }
 
                 if (!updateAvailable || !codeUpdate) {
                     MaterialAlertDialogBuilder(this@MainActivity)

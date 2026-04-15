@@ -2657,8 +2657,13 @@ def _ensure_writable(path):
     if os.path.isdir(path):
         os.chmod(path, 0o755)
 
-def _fetch_github_json(url, timeout=15):
-    """Helper to fetch JSON from GitHub API."""
+def _fetch_github_json(url, timeout=20, retries=2):
+    """Helper to fetch JSON from GitHub API with retry support.
+
+    In proot environments, network can be unstable — we retry on
+    timeout / connection errors to improve reliability.
+    """
+    import time as _time
     headers = {
         'User-Agent': 'PhoneIDE-Server',
         'Accept': 'application/vnd.github.v3+json',
@@ -2666,9 +2671,17 @@ def _fetch_github_json(url, timeout=15):
     token = _get_git_token()
     if token:
         headers['Authorization'] = f'token {token}'
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode())
+    last_err = None
+    for attempt in range(1, retries + 2):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError) as e:
+            last_err = e
+            if attempt <= retries:
+                _time.sleep(2 * attempt)
+    raise ConnectionError(f'GitHub API request failed after {retries + 1} attempts: {last_err}')
 
 @app.route('/api/update/check', methods=['POST'])
 @handle_error
@@ -2723,8 +2736,25 @@ def update_check():
             'remote_author': remote_author,
             'commits_behind': commits_behind,
         })
+    except ConnectionError as e:
+        # Network error reaching GitHub — return a structured error so the
+        # client can distinguish "no network" from "no update".
+        return jsonify({
+            'error': str(e),
+            'error_type': 'network',
+            'update_available': False,
+            'code_update': False,
+            'current_version': APP_VERSION,
+            'message': '无法连接 GitHub API，请检查网络是否通畅',
+        })
     except Exception as e:
-        return jsonify({'error': str(e), 'update_available': False, 'current_version': APP_VERSION})
+        return jsonify({
+            'error': str(e),
+            'error_type': 'unknown',
+            'update_available': False,
+            'code_update': False,
+            'current_version': APP_VERSION,
+        })
 
 def _download_zip_update():
     """Download latest code as zip from GitHub and extract over SERVER_DIR.
