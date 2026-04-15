@@ -33,6 +33,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -41,6 +42,7 @@ import okhttp3.RequestBody
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.SocketTimeoutException
@@ -252,6 +254,94 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    // ========================
+    // APK Auto-Update via JS Bridge
+    // ========================
+
+    inner class UpdateBridge {
+        @JavascriptInterface
+        fun downloadAndInstallApk(apkUrl: String, version: String) {
+            Log.d(TAG, "Download APK requested: $apkUrl (v$version)")
+            scope.launch {
+                downloadAndInstallApkInternal(apkUrl, version)
+            }
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private suspend fun downloadAndInstallApkInternal(apkUrl: String, version: String) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setTitle("Downloading Update v$version")
+            .setMessage("Downloading APK, please wait...")
+            .setCancelable(false)
+            .setView(TextView(this).apply {
+                text = "Preparing download..."
+                setPadding(48, 0, 48, 0)
+                textSize = 14f
+            })
+            .create()
+
+        withContext(Dispatchers.Main) {
+            progressDialog.show()
+            progressDialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        try {
+            val outputFile = File(externalCacheDir, "phoneide-${version}.apk")
+
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder().url(apkUrl).build()
+                    val response = updateHttpClient.newCall(request).execute()
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "APK download failed: HTTP ${response.code}")
+                        false
+                    } else {
+                        val body = response.body ?: return@withContext false
+                        val totalBytes = body.contentLength()
+                        val inputStream = body.byteStream()
+
+                        var bytesRead = 0L
+                        val buffer = ByteArray(8192)
+                        val outputStream = FileOutputStream(outputFile)
+
+                        inputStream.use { input ->
+                            outputStream.use { output ->
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    bytesRead += read
+
+                                    if (bytesRead % (500 * 1024) < 8192L) {
+                                        val progress = if (totalBytes > 0) {
+                                            "${(bytesRead * 100 / totalBytes)}% (${bytesRead / 1024 / 1024}MB / ${totalBytes / 1024 / 1024}MB)"
+                                        } else {
+                                            "${bytesRead / 1024 / 1024}MB downloaded"
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            if (progressDialog.isShowing) {
+                                                progressDialog.findViewById<TextView>(android.R.id.message)?.text = progress
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Log.d(TAG, "APK downloaded: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
+                        true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "APK download error", e)
+                    false
+                }
+            }
+
             withContext(Dispatchers.Main) {
                 progressDialog.dismiss()
             }
@@ -265,7 +355,6 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            // Install APK
             installApk(outputFile)
 
         } catch (e: Exception) {
