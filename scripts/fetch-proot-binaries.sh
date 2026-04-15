@@ -2,8 +2,12 @@
 # Fetch pre-compiled PRoot binaries from Termux packages for Android.
 # Extracts proot, libtalloc, and loader from Termux .deb packages.
 # Places them in jniLibs/<abi>/lib*.so so Android auto-extracts
-# them to nativeLibraryDir with execute permission.
-# Based on stableclaw_android's fetch-proot-binaries.sh.
+# them to nativeLibraryDir with execute permission (bypasses W^X).
+#
+# At runtime, BootstrapManager copies libtalloc.so → libtalloc.so.2
+# (matching the SONAME proot expects) in a writable directory.
+#
+# Strictly following stableclaw_android's fetch-proot-binaries.sh pattern.
 
 set -euo pipefail
 
@@ -23,6 +27,7 @@ fetch_termux_pkg() {
 
     echo "    Fetching $pkg_name for $deb_arch..."
 
+    # Get package filename from repo index
     local pkg_url
     pkg_url=$(curl -fsSL "${TERMUX_REPO}/dists/stable/main/binary-${deb_arch}/Packages" \
         | grep -A 20 "^Package: ${pkg_name}$" \
@@ -41,6 +46,7 @@ fetch_termux_pkg() {
     mkdir -p "$extract_dir"
     cd "$extract_dir"
     ar x "$deb_file"
+    # Handle different compression formats
     if [ -f data.tar.xz ]; then
         tar xf data.tar.xz
     elif [ -f data.tar.gz ]; then
@@ -62,11 +68,13 @@ fetch_for_abi() {
     mkdir -p "$out_dir"
     echo "  [$jni_abi]"
 
+    # Fetch proot package (includes proot binary + loader)
     local proot_dir="$extract_base/proot"
     if ! fetch_termux_pkg "proot" "$deb_arch" "$proot_dir"; then
         return 1
     fi
 
+    # Fetch libtalloc package
     local talloc_dir="$extract_base/talloc"
     if ! fetch_termux_pkg "libtalloc" "$deb_arch" "$talloc_dir"; then
         return 1
@@ -82,7 +90,7 @@ fetch_for_abi() {
     cp "$proot_bin" "$out_dir/libproot.so"
     chmod 755 "$out_dir/libproot.so"
 
-    # Copy loader
+    # Copy loader (64-bit or matching arch)
     local loader
     loader=$(find "$proot_dir" -name "loader" -not -name "loader32" -path "*/proot/*" -type f | head -1)
     if [ -n "$loader" ]; then
@@ -90,7 +98,7 @@ fetch_for_abi() {
         chmod 755 "$out_dir/libprootloader.so"
     fi
 
-    # Copy loader32
+    # Copy loader32 (for 32-bit compat)
     local loader32
     loader32=$(find "$proot_dir" -name "loader32" -path "*/proot/*" -type f | head -1)
     if [ -n "$loader32" ]; then
@@ -98,20 +106,22 @@ fetch_for_abi() {
         chmod 755 "$out_dir/libprootloader32.so"
     fi
 
-    # Copy libtalloc
+    # Copy libtalloc (renamed to lib*.so for Android packaging)
     local talloc_lib
     talloc_lib=$(find "$talloc_dir" -name "libtalloc.so.*" -not -name "*.py" -type f | head -1)
     if [ -z "$talloc_lib" ]; then
+        # Try the symlink target
         talloc_lib=$(find "$talloc_dir" -name "libtalloc.so" -type f -o -name "libtalloc.so" -type l | head -1)
     fi
     if [ -n "$talloc_lib" ]; then
+        # Resolve symlink and copy actual file
         cp -L "$talloc_lib" "$out_dir/libtalloc.so"
         chmod 755 "$out_dir/libtalloc.so"
     else
         echo "  [$jni_abi] WARN: libtalloc not found"
     fi
 
-    echo "  [$jni_abi] OK - $(ls "$out_dir"/ | tr '\n' ' ')"
+    echo "  [$jni_abi] OK — $(ls "$out_dir"/ | tr '\n' ' ')"
 }
 
 echo "=== Fetching PRoot + libtalloc from Termux packages ==="
@@ -120,7 +130,8 @@ echo ""
 SUCCESS=0
 FAILED=0
 
-for entry in "arm64-v8a:aarch64" "armeabi-v7a:arm"; do
+# All 3 ABIs matching stableclaw_android
+for entry in "arm64-v8a:aarch64" "armeabi-v7a:arm" "x86_64:x86_64"; do
     IFS=':' read -r abi deb_arch <<< "$entry"
 
     if fetch_for_abi "$abi" "$deb_arch"; then
@@ -133,7 +144,7 @@ for entry in "arm64-v8a:aarch64" "armeabi-v7a:arm"; do
 done
 
 echo "=== Summary ==="
-echo "Success: $SUCCESS / 2"
+echo "Success: $SUCCESS / 3"
 if [ "$FAILED" -gt 0 ]; then
     echo "Failed: $FAILED"
 fi

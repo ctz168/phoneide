@@ -1,4 +1,4 @@
-package com.phoneide
+package com.ctz168.phoneide
 
 import android.content.Context
 import android.os.Build

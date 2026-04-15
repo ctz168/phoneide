@@ -1,4 +1,4 @@
-package com.phoneide
+package com.ctz168.phoneide
 
 import android.app.Application
 import android.app.NotificationChannel

@@ -1,4 +1,4 @@
-package com.phoneide
+package com.ctz168.phoneide
 
 import android.annotation.SuppressLint
 import android.content.Intent
