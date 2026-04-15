@@ -2584,12 +2584,10 @@ def _get_git_token():
     token = cfg.get('github_token', '') or os.environ.get('GITHUB_TOKEN', '')
     return token
 
-def _get_auth_pull_url():
-    """Build authenticated HTTPS URL for git pull."""
-    token = _get_git_token()
-    if token:
-        return f'https://{token}@github.com/{GITHUB_REPO}.git'
-    return f'https://github.com/{GITHUB_REPO}.git'
+def _ensure_writable(path):
+    """Ensure a directory tree is writable by the current user."""
+    if os.path.isdir(path):
+        os.chmod(path, 0o755)
 
 def _fetch_github_json(url, timeout=15):
     """Helper to fetch JSON from GitHub API."""
@@ -2665,16 +2663,22 @@ def update_apply():
         if not os.path.exists(os.path.join(SERVER_DIR, '.git')):
             return jsonify({'error': 'Server directory is not a git repository'}), 400
 
+        # Ensure SERVER_DIR is writable
+        try:
+            subprocess.run(f'chmod -R 755 {shlex_quote(SERVER_DIR)}', shell=True, capture_output=True, timeout=15)
+        except Exception:
+            pass
+
         # git stash any local changes
         stash_result = git_cmd('stash', cwd=SERVER_DIR)
 
-        # Pull latest — use token-authenticated URL if available
-        pull_url = _get_auth_pull_url()
-        pull_result = git_cmd(f'pull {pull_url} main', cwd=SERVER_DIR, timeout=120)
+        # Pull latest from origin main
+        pull_result = git_cmd('pull origin main', cwd=SERVER_DIR, timeout=120)
         if not pull_result['ok']:
             # Restore stash on failure
             git_cmd('stash pop', cwd=SERVER_DIR)
-            return jsonify({'error': f'Git pull failed: {pull_result["stderr"]}', 'stdout': pull_result['stdout']}), 500
+            detail = pull_result['stderr'] or pull_result['stdout'] or 'unknown error'
+            return jsonify({'error': f'Git pull failed: {detail}', 'stdout': pull_result['stdout']}), 500
 
         # Restore stash
         if stash_result['ok']:

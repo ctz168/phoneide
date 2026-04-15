@@ -745,12 +745,12 @@ const AppManager = (() => {
                         body: JSON.stringify({ github_token: token })
                     });
                     if (resp.ok) {
-                        showToast('Token saved', 'success', 2000);
+                        showToast('Token 已保存', 'success', 2000);
                     } else {
-                        showToast('Save failed', 'error', 2000);
+                        showToast('保存失败', 'error', 2000);
                     }
                 } catch (e) {
-                    showToast('Save failed: ' + e.message, 'error', 2000);
+                    showToast('保存失败: ' + e.message, 'error', 2000);
                 }
             });
         }
