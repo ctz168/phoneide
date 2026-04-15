@@ -635,62 +635,41 @@ const AppManager = (() => {
     }
 
     // ── Theme Management ──
-    let currentTheme = 'claude';
-    const themes = [
-        { id: 'claude', name: 'Claude (Warm)', color: '#FAF9F6' },
-        { id: 'dark', name: 'Dark (Dracula)', color: '#1e1e2e' },
-    ];
+    let currentTheme = 'dark';
+    const sunIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+    const moonIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 
     function initTheme() {
         const toolbar = document.getElementById('toolbar-actions');
         if (!toolbar) return;
 
-        // Create theme button
         const themeBtn = document.createElement('button');
         themeBtn.id = 'btn-theme';
         themeBtn.title = '切换主题';
-        themeBtn.textContent = '🎨';
+        themeBtn.innerHTML = moonIcon;
 
-        // Create theme menu
-        const menu = document.createElement('div');
-        menu.className = 'theme-menu';
-        menu.id = 'theme-menu';
-        themes.forEach(t => {
-            const btn = document.createElement('button');
-            btn.dataset.theme = t.id;
-            btn.innerHTML = `<span class="theme-dot" style="background:${t.color};${t.id === 'claude' ? 'border-color:#D4C5B0;' : ''}"></span>${t.name}`;
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                setTheme(t.id);
-                menu.classList.remove('show');
-            });
-            menu.appendChild(btn);
-        });
-
-        themeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            menu.classList.toggle('show');
-        });
-
-        document.addEventListener('click', () => {
-            menu.classList.remove('show');
+        themeBtn.addEventListener('click', () => {
+            setTheme(currentTheme === 'dark' ? 'claude' : 'dark');
         });
 
         toolbar.insertBefore(themeBtn, toolbar.firstChild);
-        toolbar.parentElement.appendChild(menu);
     }
 
     function setTheme(themeId) {
         currentTheme = themeId;
-        document.documentElement.setAttribute('data-theme', themeId === 'dark' ? '' : themeId);
-        if (themeId === 'dark') document.documentElement.removeAttribute('data-theme');
+        const btn = document.getElementById('btn-theme');
+        if (btn) btn.innerHTML = themeId === 'dark' ? moonIcon : sunIcon;
 
-        // Update active state in menu
-        document.querySelectorAll('#theme-menu button').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.theme === themeId);
-        });
+        if (themeId === 'dark') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', themeId);
+        }
 
-        // Save theme to config
+        // Persist to localStorage
+        try { localStorage.setItem('theme', themeId); } catch (e) {}
+
+        // Also save to server config
         fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -704,18 +683,25 @@ const AppManager = (() => {
         }
     }
 
-    async function loadTheme() {
-        try {
-            const resp = await fetch('/api/config');
-            if (resp.ok) {
-                const config = await resp.json();
-                if (config.theme && config.theme !== 'dark') {
-                    document.documentElement.setAttribute('data-theme', config.theme);
-                    currentTheme = config.theme;
-                }
-            }
-        } catch (e) {
-            // Use default dark theme
+    function loadTheme() {
+        // Priority: localStorage > server config > default (dark)
+        let saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (e) {}
+
+        if (saved && (saved === 'dark' || saved === 'claude')) {
+            setTheme(saved);
+        } else {
+            // Fall back to server config
+            fetch('/api/config')
+                .then(r => r.json())
+                .then(config => {
+                    if (config.theme && (config.theme === 'dark' || config.theme === 'claude')) {
+                        setTheme(config.theme);
+                    } else {
+                        setTheme('dark');
+                    }
+                })
+                .catch(() => setTheme('dark'));
         }
     }
 

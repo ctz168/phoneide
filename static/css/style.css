@@ -1591,55 +1591,20 @@ button, .file-item, .search-result-item, .git-change-item {
 [data-theme="claude"] .output-line.status { color: #8B7355; }
 [data-theme="claude"] .output-line.info { color: #2563EB; }
 
-/* Theme selector button */
+/* Theme toggle button */
 #btn-theme {
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: color 0.2s, transform 0.3s;
 }
-.theme-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 4px;
-    z-index: 300;
-    min-width: 140px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    display: none;
-}
-.theme-menu.show {
-    display: block;
-}
-.theme-menu button {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: none;
+#btn-theme:hover {
     color: var(--text-primary);
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
 }
-.theme-menu button:hover,
-.theme-menu button:active {
-    background: var(--bg-hover);
-}
-.theme-menu button.active {
-    color: var(--accent);
-    font-weight: 600;
-}
-.theme-dot {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-right: 8px;
-    vertical-align: middle;
-    border: 1px solid var(--border);
+#btn-theme:active {
+    transform: scale(0.88);
 }
 
 /* ==================== Markdown Preview ==================== */

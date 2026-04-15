@@ -59,24 +59,88 @@ const AppManager = (() => {
         });
     }
 
-    function showPromptDialog(title, placeholder = '', defaultValue = '') {
-        return showDialog(title,
+    function showPromptDialog(title, placeholder = '', defaultValue = '', callback) {
+        const promise = showDialog(title,
             `<input type="text" placeholder="${escapeHTML(placeholder)}" value="${escapeHTML(defaultValue)}" autocomplete="off">`,
             [
                 { text: '取消', value: 'cancel', class: 'btn-cancel' },
                 { text: '确定', value: 'ok', class: 'btn-confirm' },
             ]
         );
+        // Support callback pattern for FileManager/GitManager
+        if (typeof callback === 'function') {
+            promise.then(result => {
+                callback(result.confirmed ? (result.value || '') : null);
+            });
+        }
+        return promise;
     }
 
-    function showConfirmDialog(title, message) {
-        return showDialog(title,
+    function showConfirmDialog(title, message, callback) {
+        const promise = showDialog(title,
             `<p style="color:var(--text-secondary);font-size:13px;line-height:1.5;">${escapeHTML(message)}</p>`,
             [
                 { text: '取消', value: 'cancel', class: 'btn-cancel' },
                 { text: '确定', value: 'ok', class: 'btn-confirm' },
             ]
         );
+        // Support callback pattern for FileManager/GitManager
+        if (typeof callback === 'function') {
+            promise.then(result => {
+                callback(result.confirmed);
+            });
+        }
+        return promise;
+    }
+
+    /**
+     * Choice dialog - show a list of options for user to select
+     * Supports callback pattern: showChoiceDialog(title, label, options, resolve)
+     */
+    function showChoiceDialog(title, label, options, callback) {
+        const promise = new Promise((resolve) => {
+            const overlay = document.getElementById('dialog-overlay');
+            const dialogTitle = document.getElementById('dialog-title');
+            const dialogBody = document.getElementById('dialog-body');
+            const dialogButtons = document.getElementById('dialog-buttons');
+
+            dialogTitle.textContent = title;
+            let html = `<p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">${escapeHTML(label)}</p>`;
+            options.forEach(opt => {
+                const val = (opt.value !== undefined) ? opt.value : opt;
+                const lbl = opt.label || opt.value || opt;
+                html += `<button class="choice-option" data-value="${escapeAttr(String(val))}" style="display:block;width:100%;padding:10px 12px;margin:4px 0;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;text-align:left;cursor:pointer;font-family:var(--font-mono);">${escapeHTML(String(lbl))}</button>`;
+            });
+            dialogBody.innerHTML = html;
+            dialogButtons.innerHTML = '';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = '取消';
+            cancelBtn.className = 'btn-cancel';
+            cancelBtn.onclick = () => { overlay.classList.add('hidden'); resolve(null); };
+            dialogButtons.appendChild(cancelBtn);
+
+            overlay.classList.remove('hidden');
+
+            // Bind choice clicks
+            dialogBody.querySelectorAll('.choice-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const chosen = btn.dataset.value;
+                    overlay.classList.add('hidden');
+                    resolve(chosen);
+                });
+                btn.addEventListener('touchstart', () => { btn.style.background = 'var(--bg-hover)'; }, { passive: true });
+                btn.addEventListener('touchend', () => { btn.style.background = 'var(--bg-surface)'; }, { passive: true });
+            });
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) { overlay.classList.add('hidden'); resolve(null); }
+            };
+        });
+        // Support callback pattern for GitManager
+        if (typeof callback === 'function') {
+            promise.then(value => callback(value));
+        }
+        return promise;
     }
 
     function showInputDialog(title, fields) {
@@ -114,6 +178,7 @@ const AppManager = (() => {
 
     window.showPromptDialog = showPromptDialog;
     window.showConfirmDialog = showConfirmDialog;
+    window.showChoiceDialog = showChoiceDialog;
     window.showInputDialog = showInputDialog;
     window.showDialog = showDialog;
 
@@ -325,6 +390,9 @@ const AppManager = (() => {
         const toolbar = document.getElementById('toolbar-actions');
         if (!toolbar) return;
 
+        // Guard against duplicate buttons
+        if (document.getElementById('btn-toggle-output')) return;
+
         // Add toggle button before chat button
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'btn-toggle-output';
@@ -348,31 +416,40 @@ const AppManager = (() => {
         if (searchBtn) {
             searchBtn.addEventListener('click', () => {
                 if (window.EditorManager) {
-                    const q = searchInput.value;
-                    if (q) {
-                        EditorManager.search(q);
-                    } else {
-                        searchInput.style.display = searchInput.style.display === 'none' ? '' : 'none';
-                        if (searchInput.style.display !== 'none') {
-                            searchInput.focus();
-                        }
-                    }
+                    // Directly open CodeMirror's built-in find dialog
+                    EditorManager.search();
                 }
             });
         }
 
-        // Keyboard shortcuts in search
+        // Keyboard shortcut in search input - trigger CodeMirror find
         if (searchInput) {
             searchInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
-                    if (window.EditorManager) EditorManager.search(searchInput.value);
+                    e.preventDefault();
+                    const q = searchInput.value.trim();
+                    if (q && window.EditorManager) {
+                        EditorManager.search(q);
+                    }
                 }
                 if (e.key === 'Escape') {
                     searchInput.style.display = 'none';
                     searchInput.value = '';
+                    replaceInput.style.display = 'none';
+                    replaceInput.value = '';
                 }
             });
         }
+
+        // Ctrl+F shortcut - focus custom search input or open CM dialog
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                if (window.EditorManager) {
+                    EditorManager.search();
+                }
+            }
+        });
     }
 
     // ── Toolbar Buttons ──
@@ -390,17 +467,43 @@ const AppManager = (() => {
             if (window.FileManager) FileManager.saveFile();
         });
         // Run
-        document.getElementById('btn-run').addEventListener('click', () => {
+        document.getElementById('btn-run').addEventListener('click', async () => {
             if (window.TerminalManager) {
-                TerminalManager.showPanel();
-                const filePath = window.EditorManager ? EditorManager.getCurrentFile() : '';
+                let filePath = window.EditorManager ? EditorManager.getCurrentFile() : '';
                 const compiler = document.getElementById('compiler-select');
                 const compilerVal = compiler ? compiler.value : 'python3';
+                
                 if (filePath) {
                     TerminalManager.execute(filePath, compilerVal);
                 } else {
-                    const code = window.EditorManager ? EditorManager.getContent() : '';
-                    TerminalManager.executeCode(code, compilerVal);
+                    // Show file picker to select a file to run
+                    try {
+                        const listResp = await fetch('/api/files/list');
+                        if (listResp.ok) {
+                            const listData = await listResp.json();
+                            const items = listData.items || [];
+                            const files = items.filter(i => !i.is_dir && i.is_dir !== true);
+                            if (files.length > 0) {
+                                const options = files.map(f => ({
+                                    label: f.name,
+                                    value: f.path
+                                }));
+                                const chosen = await showChoiceDialog('选择运行文件', '选择要运行的文件:', options);
+                                if (chosen) {
+                                    TerminalManager.execute(chosen, compilerVal);
+                                }
+                            } else {
+                                const code = window.EditorManager ? EditorManager.getContent() : '';
+                                if (code && code.trim()) {
+                                    TerminalManager.executeCode(code, compilerVal);
+                                } else {
+                                    showToast('没有找到可运行的文件', 'warning');
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        showToast('获取文件列表失败', 'error');
+                    }
                 }
             }
         });
@@ -408,6 +511,94 @@ const AppManager = (() => {
         document.getElementById('btn-stop').addEventListener('click', () => {
             if (window.TerminalManager) TerminalManager.stop();
         });
+    }
+
+    // ── File Panel Toolbar Buttons ──
+    function initFileToolbar() {
+        // Open Folder button
+        const openFolderBtn = document.getElementById('btn-open-folder');
+        if (openFolderBtn) {
+            openFolderBtn.addEventListener('click', async () => {
+                const result = await showPromptDialog('打开文件夹', '输入文件夹路径:', FileManager ? FileManager.currentPath : '/workspace');
+                if (result) {
+                    try {
+                        const resp = await fetch('/api/files/open_folder', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path: result })
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            throw new Error(err.error || resp.statusText);
+                        }
+                        const data = await resp.json();
+                        if (data.workspace) {
+                            document.getElementById('workspace-path').value = data.workspace;
+                            if (window.FileManager) await FileManager.loadFileList();
+                            showToast('工作区已切换', 'success');
+                        }
+                    } catch (err) {
+                        showToast('打开文件夹失败: ' + err.message, 'error');
+                    }
+                }
+            });
+        }
+
+        // New File button
+        const newFileBtn = document.getElementById('btn-new-file');
+        if (newFileBtn) {
+            newFileBtn.addEventListener('click', () => {
+                if (window.FileManager) FileManager.createFile();
+            });
+        }
+
+        // New Folder button
+        const newFolderBtn = document.getElementById('btn-new-folder');
+        if (newFolderBtn) {
+            newFolderBtn.addEventListener('click', () => {
+                if (window.FileManager) FileManager.createFolder();
+            });
+        }
+    }
+
+    // ── Venv Buttons ──
+    function initVenv() {
+        const venvBtn = document.getElementById('venv-btn');
+        const createVenvBtn = document.getElementById('create-venv-btn');
+        const installPkgBtn = document.getElementById('install-pkg-btn');
+
+        if (venvBtn) {
+            venvBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.loadVenvInfo) {
+                    TerminalManager.loadVenvInfo().then(() => {
+                        showToast('虚拟环境信息已刷新', 'info', 1500);
+                    });
+                }
+            });
+        }
+        if (createVenvBtn) {
+            createVenvBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.createVenv) {
+                    TerminalManager.createVenv();
+                }
+            });
+        }
+        if (installPkgBtn) {
+            installPkgBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.installPackage) {
+                    TerminalManager.installPackage();
+                }
+            });
+        }
+        // Import requirements button
+        const importReqBtn = document.getElementById('import-req-btn');
+        if (importReqBtn) {
+            importReqBtn.addEventListener('click', () => {
+                if (window.TerminalManager && TerminalManager.importRequirements) {
+                    TerminalManager.importRequirements();
+                }
+            });
+        }
     }
 
     // ── Auto Save ──
@@ -445,61 +636,40 @@ const AppManager = (() => {
 
     // ── Theme Management ──
     let currentTheme = 'dark';
-    const themes = [
-        { id: 'dark', name: 'Dark (Dracula)', color: '#1e1e2e' },
-        { id: 'claude', name: 'Claude (Warm)', color: '#FAF9F6' },
-    ];
+    const sunIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+    const moonIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 
     function initTheme() {
         const toolbar = document.getElementById('toolbar-actions');
         if (!toolbar) return;
 
-        // Create theme button
         const themeBtn = document.createElement('button');
         themeBtn.id = 'btn-theme';
         themeBtn.title = '切换主题';
-        themeBtn.textContent = '🎨';
+        themeBtn.innerHTML = moonIcon;
 
-        // Create theme menu
-        const menu = document.createElement('div');
-        menu.className = 'theme-menu';
-        menu.id = 'theme-menu';
-        themes.forEach(t => {
-            const btn = document.createElement('button');
-            btn.dataset.theme = t.id;
-            btn.innerHTML = `<span class="theme-dot" style="background:${t.color};${t.id === 'claude' ? 'border-color:#D4C5B0;' : ''}"></span>${t.name}`;
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                setTheme(t.id);
-                menu.classList.remove('show');
-            });
-            menu.appendChild(btn);
-        });
-
-        themeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            menu.classList.toggle('show');
-        });
-
-        document.addEventListener('click', () => {
-            menu.classList.remove('show');
+        themeBtn.addEventListener('click', () => {
+            setTheme(currentTheme === 'dark' ? 'claude' : 'dark');
         });
 
         toolbar.insertBefore(themeBtn, toolbar.firstChild);
-        toolbar.parentElement.appendChild(menu);
     }
 
     function setTheme(themeId) {
         currentTheme = themeId;
-        document.documentElement.setAttribute('data-theme', themeId === 'dark' ? '' : themeId);
-        if (themeId === 'dark') document.documentElement.removeAttribute('data-theme');
+        const btn = document.getElementById('btn-theme');
+        if (btn) btn.innerHTML = themeId === 'dark' ? moonIcon : sunIcon;
 
-        // Update active state in menu
-        document.querySelectorAll('#theme-menu button').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.theme === themeId);
-        });
+        if (themeId === 'dark') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', themeId);
+        }
 
-        // Save theme to config
+        // Persist to localStorage
+        try { localStorage.setItem('theme', themeId); } catch (e) {}
+
+        // Also save to server config
         fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -513,18 +683,25 @@ const AppManager = (() => {
         }
     }
 
-    async function loadTheme() {
-        try {
-            const resp = await fetch('/api/config');
-            if (resp.ok) {
-                const config = await resp.json();
-                if (config.theme && config.theme !== 'dark') {
-                    document.documentElement.setAttribute('data-theme', config.theme);
-                    currentTheme = config.theme;
-                }
-            }
-        } catch (e) {
-            // Use default dark theme
+    function loadTheme() {
+        // Priority: localStorage > server config > default (dark)
+        let saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (e) {}
+
+        if (saved && (saved === 'dark' || saved === 'claude')) {
+            setTheme(saved);
+        } else {
+            // Fall back to server config
+            fetch('/api/config')
+                .then(r => r.json())
+                .then(config => {
+                    if (config.theme && (config.theme === 'dark' || config.theme === 'claude')) {
+                        setTheme(config.theme);
+                    } else {
+                        setTheme('dark');
+                    }
+                })
+                .catch(() => setTheme('dark'));
         }
     }
 
@@ -575,6 +752,7 @@ const AppManager = (() => {
         const updateCheckBtn = document.getElementById('update-check-btn');
         const updateApplyBtn = document.getElementById('update-apply-btn');
         const updateCloseBtn = document.getElementById('update-close-btn');
+        const updateSaveTokenBtn = document.getElementById('update-save-token');
 
         if (updateCheckBtn) {
             updateCheckBtn.addEventListener('click', () => checkUpdates());
@@ -582,9 +760,35 @@ const AppManager = (() => {
         if (updateApplyBtn) {
             updateApplyBtn.addEventListener('click', () => applyUpdate());
         }
+        const updateDiagnoseBtn = document.getElementById('update-diagnose-btn');
+        if (updateDiagnoseBtn) {
+            updateDiagnoseBtn.addEventListener('click', () => diagnoseUpdate());
+        }
         if (updateCloseBtn) {
             updateCloseBtn.addEventListener('click', () => {
                 document.getElementById('update-dialog-overlay').classList.add('hidden');
+            });
+        }
+        // Save GitHub token to server config
+        if (updateSaveTokenBtn) {
+            updateSaveTokenBtn.addEventListener('click', async () => {
+                const input = document.getElementById('update-github-token');
+                if (!input) return;
+                const token = input.value.trim();
+                try {
+                    const resp = await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ github_token: token })
+                    });
+                    if (resp.ok) {
+                        showToast('Token 已保存', 'success', 2000);
+                    } else {
+                        showToast('保存失败', 'error', 2000);
+                    }
+                } catch (e) {
+                    showToast('保存失败: ' + e.message, 'error', 2000);
+                }
             });
         }
 
@@ -829,6 +1033,19 @@ const AppManager = (() => {
         if (applyBtn) applyBtn.classList.add('hidden');
         if (checkBtn) checkBtn.disabled = true;
 
+        // Load saved GitHub token (masked)
+        try {
+            const cfgResp = await fetch('/api/config');
+            if (cfgResp.ok) {
+                const cfg = await cfgResp.json();
+                const tokenInput = document.getElementById('update-github-token');
+                if (tokenInput && cfg.github_token) {
+                    tokenInput.value = cfg.github_token;
+                    tokenInput.placeholder = 'ghp_****' + cfg.github_token.slice(-4);
+                }
+            }
+        } catch (_e) {}
+
         try {
             const resp = await fetch('/api/update/check', { method: 'POST' });
             if (!resp.ok) {
@@ -931,17 +1148,42 @@ const AppManager = (() => {
 
         try {
             const resp = await fetch('/api/update/apply', { method: 'POST' });
+            const respText = await resp.text().catch(() => 'Unknown error');
+
             if (!resp.ok) {
-                const errText = await resp.text().catch(() => 'Unknown error');
-                throw new Error(errText);
+                // Parse error JSON and show full details
+                let errMsg = respText;
+                let diagInfo = '';
+                try {
+                    const errJson = JSON.parse(respText);
+                    errMsg = errJson.error || respText;
+                    // Show diagnostics if available
+                    if (errJson.diagnostics) {
+                        const d = errJson.diagnostics;
+                        diagInfo = '\n\n── 诊断信息 ──';
+                        if (d.SERVER_DIR) diagInfo += `\n目录: ${d.SERVER_DIR}`;
+                        if (d.write_test !== undefined) diagInfo += `\n写权限: ${d.write_test ? '✅' : '❌ ' + (d.write_error || '')}`;
+                        if (d.write_ok_after_fix !== undefined) diagInfo += `\n修复后写权限: ${d.write_ok_after_fix ? '✅' : '❌'}`;
+                        if (d.tmp_writable !== undefined) diagInfo += `\n/tmp写权限: ${d.tmp_writable ? '✅' : '❌'}`;
+                        if (d.network_ok !== undefined) diagInfo += `\n网络: ${d.network_ok ? '✅' : '❌ ' + (d.network_error || '')}`;
+                        if (d.disk_free_mb !== undefined) diagInfo += `\n剩余空间: ${d.disk_free_mb}MB`;
+                    }
+                    if (errJson.traceback) {
+                        diagInfo += '\n\n── 完整错误 ──\n' + errJson.traceback;
+                    }
+                } catch (parseErr) {
+                    // not JSON, use raw text
+                }
+                throw new Error(errMsg + diagInfo);
             }
 
-            const data = await resp.json();
+            const data = JSON.parse(respText);
+            const method = data.method || 'zip';
 
             if (progressEl) progressEl.style.width = '100%';
-            statusEl.innerHTML = 'Update applied! The page will reload in a few seconds...';
+            statusEl.innerHTML = `✅ 更新完成 (${method})! 页面将在几秒后刷新...`;
 
-            showToast('Update applied, reloading...', 'success', 3000);
+            showToast(`更新完成, 正在重启...`, 'success', 3000);
 
             // Reload page after delay
             setTimeout(() => {
@@ -949,12 +1191,89 @@ const AppManager = (() => {
             }, 3000);
 
         } catch (err) {
-            statusEl.textContent = 'Update failed: ' + err.message;
+            statusEl.textContent = '❌ ' + err.message;
+            statusEl.style.whiteSpace = 'pre-wrap';
+            statusEl.style.wordBreak = 'break-all';
+            statusEl.style.fontSize = '12px';
+            statusEl.style.maxHeight = '300px';
+            statusEl.style.overflowY = 'auto';
             if (progressEl) progressEl.style.width = '0%';
-            showToast('Update failed: ' + err.message, 'error', 3000);
+            showToast('更新失败', 'error', 5000);
         } finally {
             if (applyBtn) applyBtn.disabled = false;
             if (checkBtn) checkBtn.disabled = false;
+        }
+    }
+
+    // ── Diagnose Update Environment ──
+    async function diagnoseUpdate() {
+        const statusEl = document.getElementById('update-status');
+        if (!statusEl) return;
+
+        statusEl.innerHTML = '正在运行诊断...';
+        statusEl.style.whiteSpace = 'pre-wrap';
+        statusEl.style.fontSize = '11px';
+
+        try {
+            const resp = await fetch('/api/update/diagnose');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+
+            let report = '── 更新诊断报告 ──\n\n';
+            report += `版本: ${data.APP_VERSION || '?'}\n`;
+            report += `进程: PID=${data.pid}, UID=${data.uid}, GID=${data.gid}\n`;
+            report += `工作目录: ${data.cwd}\n`;
+            report += `HOME: ${data.user_home}\n`;
+            report += `临时目录: ${data.tempdir}\n\n`;
+
+            report += `── SERVER_DIR ──\n`;
+            report += `路径: ${data.SERVER_DIR}\n`;
+            report += `存在: ${data.SERVER_DIR_exists ? '✅' : '❌'}\n`;
+            if (data.SERVER_DIR_stat) {
+                const s = data.SERVER_DIR_stat;
+                report += `权限: ${s.mode} (可写:${s.writable ? '✅' : '❌'} 可读:${s.readable ? '✅' : '❌'})\n`;
+            }
+            report += `写文件测试: ${data.SERVER_DIR_write ? '✅' : '❌ ' + (data.SERVER_DIR_write_error || '')}\n`;
+            report += `/tmp写测试: ${data.tmp_write ? '✅' : '❌ ' + (data.tmp_write_error || '')}\n`;
+
+            // Disk
+            report += '\n── 磁盘空间 ──\n';
+            for (const [k, v] of Object.entries(data)) {
+                if (k.startsWith('disk_') && k.endsWith('_free_mb')) {
+                    const path = k.replace('disk_', '').replace('_free_mb', '');
+                    report += `${path}: ${v}MB\n`;
+                }
+            }
+
+            // Network
+            report += '\n── 网络 ──\n';
+            report += `GitHub API: ${data.github_api || '?'}\n`;
+            if (data.github_latest_sha) report += `最新提交: ${data.github_latest_sha} ${data.github_latest_msg || ''}\n`;
+            report += `GitHub ZIP: ${data.github_zip || '?'}\n`;
+            if (data.github_zip_size) report += `ZIP大小: ${data.github_zip_size}\n`;
+
+            // Git
+            report += '\n── Git ──\n';
+            report += `.git目录: ${data.git_dir_exists ? '✅' : '❌'}\n`;
+            if (data.git_remote) report += `远程: ${data.git_remote}\n`;
+            if (data.git_error) report += `错误: ${data.git_error}\n`;
+
+            // Config
+            if (data.config_workspace) report += `\n── 配置 ──\n工作区: ${data.config_workspace}\n`;
+            if (data.config_has_token !== undefined) report += `Token: ${data.config_has_token ? '已配置' : '未配置'}\n`;
+
+            // Server log
+            if (data.server_log_tail && data.server_log_tail.length > 0) {
+                report += '\n── 服务器日志 (最后20行) ──\n';
+                report += data.server_log_tail.join('\n');
+            }
+
+            statusEl.textContent = report;
+            showToast('诊断完成', 'info', 2000);
+
+        } catch (err) {
+            statusEl.textContent = '诊断失败: ' + err.message;
+            showToast('诊断失败', 'error');
         }
     }
 
@@ -1003,6 +1322,8 @@ const AppManager = (() => {
         initBottomPanel();
         initEditorToolbar();
         initToolbar();
+        initFileToolbar();
+        initVenv();
         initAutoSave();
         initResize();
         initMobileFixes();
@@ -1031,8 +1352,8 @@ const AppManager = (() => {
             // Load compilers
             if (window.TerminalManager) await TerminalManager.loadCompilers();
 
-            // Load file tree
-            if (window.FileManager) await FileManager.loadFileList('');
+            // Load file tree (pass no path to use workspace root)
+            if (window.FileManager) await FileManager.loadFileList();
 
             // Load git status
             if (window.GitManager) await GitManager.refresh();
@@ -1040,14 +1361,78 @@ const AppManager = (() => {
             // Load chat history
             if (window.ChatManager) await ChatManager.loadHistory();
 
-            // Load venv info
-            if (window.TerminalManager) await TerminalManager.loadVenvInfo();
+            // Load venv info (already called in TerminalManager.init, but ensure loaded)
+            if (window.TerminalManager && typeof TerminalManager.loadVenvInfo === 'function') {
+                await TerminalManager.loadVenvInfo();
+            }
+
+            // Wire up chat settings button
+            const chatSettingsBtn = document.getElementById('chat-settings-btn');
+            if (chatSettingsBtn) {
+                chatSettingsBtn.addEventListener('click', () => showLLMSettingsDialog());
+            }
 
             showToast('PhoneIDE 就绪', 'success', 1500);
             console.log('[PhoneIDE] Ready!');
         } catch (err) {
             console.error('[PhoneIDE] Init error:', err);
             showToast('初始化失败: ' + err.message, 'error', 3000);
+        }
+    }
+
+    // ── LLM Settings Dialog ──
+    async function showLLMSettingsDialog() {
+        let currentConfig = {};
+        try {
+            const resp = await fetch('/api/llm/config');
+            if (resp.ok) currentConfig = await resp.json();
+        } catch (_e) {}
+
+        const values = await showInputDialog('⚙️ LLM 设置', [
+            { name: 'api_type', label: 'API 类型', type: 'select', placeholder: 'openai', value: currentConfig.api_type || 'openai',
+              options: [
+                  { value: 'openai', label: 'OpenAI' },
+                  { value: 'anthropic', label: 'Anthropic' },
+                  { value: 'ollama', label: 'Ollama' },
+                  { value: 'custom', label: 'Custom' }
+              ]},
+            { name: 'api_base', label: 'API Base URL', type: 'text', placeholder: 'https://api.openai.com/v1', value: currentConfig.api_base || '' },
+            { name: 'api_key', label: 'API Key', type: 'password', placeholder: 'sk-...', value: currentConfig.api_key || '' },
+            { name: 'model', label: '模型', type: 'text', placeholder: 'gpt-4o-mini', value: currentConfig.model || '' },
+            { name: 'temperature', label: 'Temperature', type: 'text', placeholder: '0.7', value: String(currentConfig.temperature || '0.7') },
+        ]);
+        if (!values) return;
+
+        try {
+            values.temperature = parseFloat(values.temperature) || 0.7;
+            const resp = await fetch('/api/llm/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(values)
+            });
+            if (resp.ok) {
+                showToast('LLM 设置已保存', 'success');
+            } else {
+                showToast('保存失败: ' + (await resp.text()), 'error');
+            }
+        } catch (e) {
+            showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+
+    // ── LLM Test Connection ──
+    async function testLLMConnection() {
+        showToast('正在测试 LLM 连接...', 'info', 2000);
+        try {
+            const resp = await fetch('/api/llm/test', { method: 'POST' });
+            const data = await resp.json();
+            if (resp.ok && data.ok) {
+                showToast('LLM 连接成功 ✓', 'success');
+            } else {
+                showToast('LLM 连接失败: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (e) {
+            showToast('连接失败: ' + e.message, 'error');
         }
     }
 
