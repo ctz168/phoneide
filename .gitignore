@@ -17,4 +17,11 @@ phoneide_workspace/
 android/app/build/
 android/.gradle/
 android/local.properties
+android/captures/
 *.keystore
+
+# Distribution
+dist/
+
+# IDE assets are generated during CI
+android/app/src/main/assets/

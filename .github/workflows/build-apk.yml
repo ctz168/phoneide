@@ -1,13 +1,27 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+          - both
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v4
@@ -23,61 +37,118 @@ jobs:
 
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y binutils zstd
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq binutils zstd
 
+    # Step 1: Fetch proot binaries (Termux .deb -> jniLibs/*.so)
     - name: Fetch proot binaries
       run: |
         chmod +x scripts/fetch-proot-binaries.sh
-        ./scripts/fetch-proot-binaries.sh
+        bash scripts/fetch-proot-binaries.sh
 
     - name: Verify jniLibs
       run: |
         echo "=== jniLibs contents ==="
         find android/app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
+        echo ""
+        TOTAL=$(find android/app/src/main/jniLibs -name "*.so" | wc -l)
+        echo "Total .so files: $TOTAL"
+        if [ "$TOTAL" -lt 3 ]; then
+          echo "ERROR: Expected at least 3 .so files (proot + loader + talloc)"
+          exit 1
+        fi
 
+    # Step 2: Copy IDE files to Android assets (in-APK packaging)
     - name: Copy IDE files to assets
       run: |
         mkdir -p android/app/src/main/assets/ide
         cp server.py android/app/src/main/assets/ide/
         cp requirements.txt android/app/src/main/assets/ide/
         cp -r static android/app/src/main/assets/ide/
-        echo "=== Assets contents ==="
-        find android/app/src/main/assets/ide -type f | head -20
+        echo "=== Assets ==="
+        find android/app/src/main/assets/ide -type f | wc -l
+        echo "files packaged"
 
-    - name: Create gradle wrapper
-      working-directory: android
-      run: |
-        gradle wrapper --gradle-version 8.2
-
-    - name: Make gradlew executable
-      working-directory: android
-      run: chmod +x gradlew
-
+    # Step 3: Build with Gradle
     - name: Build Debug APK
-      working-directory: android
-      run: ./gradlew assembleDebug --no-daemon
-
-    - name: Sign APK with debug key
       run: |
-        cp android/app/build/outputs/apk/debug/app-debug.apk phoneide-debug.apk
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleDebug --no-daemon
 
-    - name: Upload APK to Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: latest
-        name: "PhoneIDE Latest Build"
-        body: |
-          Automated build from commit ${{ github.sha }}
-          Build time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-        files: phoneide-debug.apk
-        prerelease: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
+    - name: Build Release APK
+      run: |
+        cd android
+        # Generate a debug keystore for CI release signing
+        keytool -genkeypair \
+          -v -keystore ../release.keystore \
+          -alias phoneide \
+          -keyalg RSA -keysize 2048 \
+          -validity 10000 \
+          -storepass phoneide123 \
+          -keypass phoneide123 \
+          -dname "CN=PhoneIDE, OU=Dev, O=ctz168, L=Unknown, ST=Unknown, C=CN"
+        ./gradlew assembleRelease --no-daemon \
+          -Pandroid.injected.signing.store.file=../release.keystore \
+          -Pandroid.injected.signing.store.password=phoneide123 \
+          -Pandroid.injected.signing.key.alias=phoneide \
+          -Pandroid.injected.signing.key.password=phoneide123
 
-    - name: Upload APK as Artifact
+    # Step 4: Prepare output
+    - name: Prepare APK artifacts
+      run: |
+        mkdir -p dist
+        cp android/app/build/outputs/apk/debug/app-debug.apk dist/PhoneIDE-debug.apk
+        cp android/app/build/outputs/apk/release/app-release.apk dist/PhoneIDE-release.apk
+        echo "### Build Artifacts ###"
+        ls -lh dist/
+        echo ""
+        echo "Debug: $(du -h dist/PhoneIDE-debug.apk | cut -f1)"
+        echo "Release: $(du -h dist/PhoneIDE-release.apk | cut -f1)"
+
+    # Upload artifacts
+    - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: phoneide-debug-apk
-        path: phoneide-debug.apk
+        name: PhoneIDE-debug
+        path: dist/PhoneIDE-debug.apk
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: PhoneIDE-release
+        path: dist/PhoneIDE-release.apk
+
+    # Publish to GitHub Releases
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v3.0.${{ github.run_number }}
+        name: "PhoneIDE v3.0.${{ github.run_number }}"
+        body: |
+          ## PhoneIDE v3.0.${{ github.run_number }}
+
+          Mobile Web IDE for Android - based on proot Ubuntu.
+
+          ### Changes
+          - Commit: `${{ github.sha }}`
+          - Build: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          ### Install
+          1. Download `PhoneIDE-release.apk`
+          2. Enable "Install from unknown sources"
+          3. Install APK
+
+          ### First Launch
+          - App will download Ubuntu 24.04 rootfs (~300MB)
+          - Bootstrap installs Python + Flask automatically
+          - IDE accessible at `http://127.0.0.1:1239`
+
+          > Requires ~500MB free space for Ubuntu environment
+        files: |
+          dist/PhoneIDE-debug.apk
+          dist/PhoneIDE-release.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
