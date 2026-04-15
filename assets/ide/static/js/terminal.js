@@ -628,11 +628,14 @@ const TerminalManager = (() => {
         const panel = document.getElementById('bottom-panel');
         if (!panel) return;
 
+        // Remove 'hidden' class first (CSS has display:none !important)
+        panel.classList.remove('hidden');
+
         if (panel.style.display === 'none' || !panel.classList.contains('visible')) {
             showPanel();
         } else {
             hidePanel();
-        }
+ }
     }
 
     /**
@@ -740,23 +743,7 @@ const TerminalManager = (() => {
             });
         }
 
-        // Run button
-        const runBtn = document.getElementById('btn-run');
-        if (runBtn) {
-            runBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-
-                // Determine what to run: current file or ask user
-                const filePath = window.FileManager ? window.FileManager.currentFilePath : null;
-
-                if (filePath) {
-                    execute(filePath);
-                } else {
-                    showToast('No file open to run', 'warning');
-                }
-            });
-        }
-
+        // Run button is handled by AppManager (with file picker), not here.
         // Stop button
         const stopBtn = document.getElementById('btn-stop');
         if (stopBtn) {

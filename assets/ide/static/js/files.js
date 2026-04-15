@@ -255,7 +255,10 @@ const FileManager = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path, type: 'file' })
             });
-            if (!resp.ok) throw new Error(`Failed to create file: ${resp.statusText}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to create file: ${resp.statusText}`);
+            }
 
             showToast(`Created ${name}`, 'success');
             await loadFileList(currentPath);
@@ -282,7 +285,10 @@ const FileManager = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path, type: 'directory' })
             });
-            if (!resp.ok) throw new Error(`Failed to create folder: ${resp.statusText}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to create folder: ${resp.statusText}`);
+            }
 
             showToast(`Created folder ${name}`, 'success');
             await loadFileList(currentPath);
@@ -383,6 +389,34 @@ const FileManager = (() => {
         await loadFileList(path);
     }
 
+    // ── File Icon Mapping ─────────────────────────────────────────
+    function getFileIcon(name) {
+        const ext = name.split('.').pop().toLowerCase();
+        const iconMap = {
+            'py': '🐍', 'js': '📜', 'ts': '📘', 'jsx': '📜', 'tsx': '📘',
+            'html': '🌐', 'htm': '🌐',
+            'css': '🎨', 'scss': '🎨', 'sass': '🎨', 'less': '🎨',
+            'json': '📋', 'jsonc': '📋',
+            'md': '📝', 'txt': '📄', 'log': '📄',
+            'sh': '⚡', 'bash': '⚡', 'zsh': '⚡', 'fish': '⚡',
+            'yaml': '⚙️', 'yml': '⚙️', 'toml': '⚙️', 'cfg': '⚙️', 'ini': '⚙️', 'conf': '⚙️', 'env': '🔒',
+            'c': '🔧', 'cpp': '🔧', 'h': '🔧', 'hpp': '🔧', 'cc': '🔧',
+            'java': '☕', 'kt': '🟣', 'swift': '🍎',
+            'rs': '🦀', 'go': '🐹', 'rb': '💎', 'php': '🐘',
+            'sql': '🗃️', 'xml': '📰', 'svg': '🖼️',
+            'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'webp': '🖼️', 'ico': '🖼️',
+            'gitignore': '🚫', 'dockerfile': '🐳', 'makefile': '🔨',
+            'lock': '🔒', 'pyc': '🔒',
+        };
+        // Special filenames
+        if (name === 'Dockerfile') return '🐳';
+        if (name === 'Makefile') return '🔨';
+        if (name === 'README.md') return '📖';
+        if (name === 'requirements.txt') return '📦';
+        if (name.startsWith('.git')) return '🚫';
+        return iconMap[ext] || '📄';
+    }
+
     // ── Rendering ──────────────────────────────────────────────────
 
     /**
@@ -418,7 +452,7 @@ const FileManager = (() => {
 
         for (const item of items) {
             const dir = isDirectory(item);
-            const icon = item.icon || (dir ? '📁' : '📄');
+            const icon = dir ? '📁' : getFileIcon(item.name || '');
             const size = dir ? '' : formatSize(item.size || 0);
             const isActive = item.path === currentFilePath ? ' active' : '';
             const escapedPath = escapeAttr(item.path);
@@ -617,7 +651,10 @@ const FileManager = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path, type: 'file' })
             });
-            if (!resp.ok) throw new Error(`Failed to create file: ${resp.statusText}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to create file: ${resp.statusText}`);
+            }
             showToast(`Created ${name}`, 'success');
             await loadFileList(currentPath);
         } catch (err) {
@@ -639,7 +676,10 @@ const FileManager = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path, type: 'directory' })
             });
-            if (!resp.ok) throw new Error(`Failed to create folder: ${resp.statusText}`);
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to create folder: ${resp.statusText}`);
+            }
             showToast(`Created folder ${name}`, 'success');
             await loadFileList(currentPath);
         } catch (err) {

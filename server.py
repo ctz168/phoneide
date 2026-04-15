@@ -482,6 +482,14 @@ def create_file():
     if not target.startswith(os.path.realpath(base)):
         return jsonify({'error': 'Access denied'}), 403
 
+    # Ensure parent directory is writable
+    parent = os.path.dirname(target)
+    if os.path.isdir(parent):
+        try:
+            os.chmod(parent, 0o755)
+        except Exception:
+            pass
+
     if is_dir:
         os.makedirs(target, exist_ok=True)
     else:
@@ -778,7 +786,11 @@ def git_cmd(args, cwd=None, timeout=60):
 @app.route('/api/git/status', methods=['GET'])
 @handle_error
 def git_status():
-    r = git_cmd('status --porcelain -b')
+    path = request.args.get('path', '')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
+    r = git_cmd('status --porcelain -b', cwd=cwd)
     if not r['ok']:
         return jsonify({'error': r['stderr']}), 500
     lines = r['stdout'].strip().split('\n') if r['stdout'].strip() else []
@@ -810,7 +822,11 @@ def git_status():
 @handle_error
 def git_log():
     count = request.args.get('count', 20)
-    r = git_cmd(f'log --oneline --decorate -n {count} --format="%H|%an|%ae|%at|%s"')
+    path = request.args.get('path', '')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
+    r = git_cmd(f'log --oneline --decorate -n {count} --format="%H|%an|%ae|%at|%s"', cwd=cwd)
     if not r['ok']:
         return jsonify({'commits': [], 'error': r['stderr']})
     commits = []
@@ -831,7 +847,11 @@ def git_log():
 @app.route('/api/git/branch', methods=['GET'])
 @handle_error
 def git_branch():
-    r = git_cmd('branch -a')
+    path = request.args.get('path', '')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
+    r = git_cmd('branch -a', cwd=cwd)
     if not r['ok']:
         return jsonify({'branches': [], 'error': r['stderr']})
     branches = []
@@ -847,9 +867,13 @@ def git_branch():
 def git_checkout():
     data = request.json
     branch = data.get('branch', '')
+    path = data.get('path', '')
     if not branch:
         return jsonify({'error': 'Branch name required'}), 400
-    r = git_cmd(f'checkout {shlex_quote(branch)}')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
+    r = git_cmd(f'checkout {shlex_quote(branch)}', cwd=cwd)
     if not r['ok']:
         return jsonify({'error': r['stderr']}), 500
     return jsonify({'ok': True})
@@ -862,11 +886,15 @@ def git_add():
     except:
         data = {}
     paths = data.get('paths', [])
+    path = data.get('path', '')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
     if not paths:
-        r = git_cmd('add -A')
+        r = git_cmd('add -A', cwd=cwd)
     else:
         files = ' '.join(shlex_quote(p) for p in paths)
-        r = git_cmd(f'add {files}')
+        r = git_cmd(f'add {files}', cwd=cwd)
     return jsonify({'ok': r['ok'], 'stderr': r['stderr']})
 
 @app.route('/api/git/commit', methods=['POST'])
@@ -877,9 +905,13 @@ def git_commit():
     except:
         data = {}
     message = data.get('message', '')
+    path = data.get('path', '')
     if not message:
         return jsonify({'error': 'Commit message required'}), 400
-    r = git_cmd(f'commit -m {shlex_quote(message)}')
+    config = load_config()
+    base = config.get('workspace', WORKSPACE)
+    cwd = os.path.join(base, path) if path else None
+    r = git_cmd(f'commit -m {shlex_quote(message)}', cwd=cwd)
     if not r['ok']:
         return jsonify({'error': r['stderr']}), 500
     return jsonify({'ok': True})

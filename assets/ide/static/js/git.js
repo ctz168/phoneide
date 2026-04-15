@@ -11,6 +11,20 @@ const GitManager = (() => {
     let logData = [];
     let branchData = [];
 
+    /**
+     * Get the current git working directory from the file manager.
+     * Returns empty string if at workspace root (server will use default).
+     */
+    function getGitCwd() {
+        if (window.FileManager) {
+            const cp = window.FileManager.currentPath;
+            if (cp && cp !== '/workspace' && cp !== '/' && cp !== '') {
+                return cp;
+            }
+        }
+        return '';
+    }
+
     // ── API: Status ────────────────────────────────────────────────
 
     /**
@@ -18,7 +32,9 @@ const GitManager = (() => {
      */
     async function refreshStatus() {
         try {
-            const resp = await fetch('/api/git/status');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/status${params}`);
             if (!resp.ok) throw new Error(`Failed to get status: ${resp.statusText}`);
             const data = await resp.json();
             statusData = data;
@@ -38,7 +54,9 @@ const GitManager = (() => {
      */
     async function refreshLog() {
         try {
-            const resp = await fetch('/api/git/log');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/log${params}`);
             if (!resp.ok) throw new Error(`Failed to get log: ${resp.statusText}`);
             const data = await resp.json();
             logData = Array.isArray(data) ? data : (data.commits || []);
@@ -57,7 +75,9 @@ const GitManager = (() => {
      */
     async function refreshBranches() {
         try {
-            const resp = await fetch('/api/git/branch');
+            const cwd = getGitCwd();
+            const params = cwd ? `?path=${encodeURIComponent(cwd)}` : '';
+            const resp = await fetch(`/api/git/branch${params}`);
             if (!resp.ok) throw new Error(`Failed to get branches: ${resp.statusText}`);
             const data = await resp.json();
             branchData = Array.isArray(data) ? data : (data.branches || []);
@@ -129,9 +149,13 @@ const GitManager = (() => {
                 await window.FileManager.openFolder(clonePath);
             }
 
-            // Try git init (ignore if already a repo)
+            // Try git init in the cloned folder (ignore if already a repo)
             try {
-                await fetch('/api/git/init', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                await fetch('/api/git/init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: clonePath })
+                });
             } catch (_e) {}
 
             // Refresh file list
@@ -240,16 +264,8 @@ const GitManager = (() => {
     async function pull() {
         showToast('Pulling changes...', 'info');
 
-        // Detect git root directory from file manager
-        let gitCwd = '';
-        if (window.FileManager) {
-            const cp = window.FileManager.currentPath;
-            if (cp && cp !== '/workspace' && cp !== '/') {
-                gitCwd = cp;
-            }
-        }
-
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/pull', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -280,16 +296,8 @@ const GitManager = (() => {
     async function push(setUpstream) {
         showToast('Pushing changes...', 'info');
 
-        // Detect git root directory from file manager
-        let gitCwd = '';
-        if (window.FileManager) {
-            const cp = window.FileManager.currentPath;
-            if (cp && cp !== '/workspace' && cp !== '/') {
-                gitCwd = cp;
-            }
-        }
-
         try {
+            const gitCwd = getGitCwd();
             const body = { path: gitCwd };
             if (setUpstream !== undefined) {
                 body.set_upstream = setUpstream;
@@ -351,10 +359,11 @@ const GitManager = (() => {
         if (typeof paths === 'string') paths = [paths];
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths })
+                body: JSON.stringify({ paths, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Git add failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -372,10 +381,11 @@ const GitManager = (() => {
      */
     async function addAll() {
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: ['.'] })
+                body: JSON.stringify({ paths: ['.'], path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Git add all failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -406,10 +416,11 @@ const GitManager = (() => {
         }
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/commit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Commit failed: ${resp.statusText}`);
             const data = await resp.json();
@@ -453,10 +464,11 @@ const GitManager = (() => {
         showToast(`Checking out ${branch}...`, 'info');
 
         try {
+            const gitCwd = getGitCwd();
             const resp = await fetch('/api/git/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch })
+                body: JSON.stringify({ branch, path: gitCwd })
             });
             if (!resp.ok) throw new Error(`Checkout failed: ${resp.statusText}`);
             const data = await resp.json();
