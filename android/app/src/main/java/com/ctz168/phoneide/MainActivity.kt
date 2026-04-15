@@ -984,19 +984,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // REQUEST_INSTALL_PACKAGES — needed for APK auto-update on Android 8+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!packageManager.canRequestPackageInstalls()) {
-                try {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:$packageName")
-                    )
-                    startActivity(intent)
-                } catch (_: Exception) {}
-            }
-        }
-
         if (permsToRequest.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 this,

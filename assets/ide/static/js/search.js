@@ -11,6 +11,9 @@ const SearchManager = (() => {
     let lastOptions = {};
     let isSearching = false;
 
+    // Local reference to global toast (must use window. in strict mode)
+    const showToast = window.showToast || function(msg) { console.warn('[Search]', msg); };
+
     // ── Helpers ────────────────────────────────────────────────────
 
     /**

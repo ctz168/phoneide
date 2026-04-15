@@ -236,6 +236,9 @@ const TerminalManager = (() => {
                     const type = code2 === 0 ? 'success' : 'error';
                     appendOutput(`[exit] Code: ${code2} (${type === 'success' ? 'OK' : 'FAIL'})`, type);
                 }
+                // Auto-focus back to input after non-streaming execution
+                const si = document.getElementById('shell-input');
+                if (si) si.focus();
             }
 
             return data;
@@ -481,6 +484,9 @@ const TerminalManager = (() => {
         currentProcId = null;
         pollSince = 0;
         setRunningState(false);
+        // Auto-focus back to input after process completes
+        const si = document.getElementById('shell-input');
+        if (si) si.focus();
     }
 
     // ── Keyboard / Viewport Handling (Mobile) ──────────────────
