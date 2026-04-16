@@ -5,10 +5,14 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
+      ide_ref:
+        description: 'ctz168/ide branch/tag/SHA to bundle (default: main)'
+        required: false
+        default: 'main'
       build_type:
         description: 'Build type'
         required: false
-        default: 'debug'
+        default: 'both'
         type: choice
         options:
           - debug
@@ -17,6 +21,9 @@ on:
 
 permissions:
   contents: write
+
+env:
+  IDE_REPO: ctz168/ide
 
 jobs:
   build:
@@ -58,25 +65,36 @@ jobs:
           exit 1
         fi
 
-    # Step 2: Copy IDE files to Android assets (in-APK packaging)
+    # Step 2: Clone ctz168/ide and copy IDE files to Android assets
+    - name: Clone IDE from ctz168/ide
+      run: |
+        IDE_REF="${{ github.event.inputs.ide_ref || 'main' }}"
+        echo "Cloning ctz168/ide at ref: $IDE_REF"
+        git clone --depth 1 --branch "$IDE_REF" https://github.com/${IDE_REPO}.git /tmp/ide
+        echo "Cloned commit: $(cd /tmp/ide && git rev-parse HEAD)"
+        echo "ide_commit=$(cd /tmp/ide && git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        echo "=== IDE files ==="
+        find /tmp/ide -type f -name "*.py" -o -name "*.html" -o -name "*.js" -o -name "*.css" | head -30
+
     - name: Copy IDE files to assets
       run: |
         mkdir -p android/app/src/main/assets/ide
         # Core Python backend
-        cp server.py android/app/src/main/assets/ide/
-        cp utils.py android/app/src/main/assets/ide/
-        cp requirements.txt android/app/src/main/assets/ide/
+        cp /tmp/ide/server.py android/app/src/main/assets/ide/
+        cp /tmp/ide/utils.py android/app/src/main/assets/ide/
+        cp /tmp/ide/requirements.txt android/app/src/main/assets/ide/
         # Routes (blueprint modules)
-        cp -r routes android/app/src/main/assets/ide/
+        cp -r /tmp/ide/routes android/app/src/main/assets/ide/
         # Frontend static files
-        cp -r static android/app/src/main/assets/ide/
+        cp -r /tmp/ide/static android/app/src/main/assets/ide/
         # Write version.txt and commit.txt for runtime version detection
         VERSION=$(grep 'versionName' android/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+        IDE_COMMIT=$(cd /tmp/ide && git rev-parse HEAD)
         FULL_TAG="v${VERSION}-build.${{ github.run_number }}"
         echo "$FULL_TAG" > android/app/src/main/assets/ide/version.txt
-        echo "${{ github.sha }}" > android/app/src/main/assets/ide/commit.txt
+        echo "$IDE_COMMIT" > android/app/src/main/assets/ide/commit.txt
         echo "version.txt: $FULL_TAG"
-        echo "commit.txt: ${{ github.sha }}"
+        echo "commit.txt: $IDE_COMMIT (from ctz168/ide)"
         echo "=== Assets ==="
         find android/app/src/main/assets/ide -type f | wc -l
         echo "files packaged"
@@ -89,7 +107,6 @@ jobs:
         done
         echo "All critical files verified"
 
-    # Step 3: Build with Gradle
     - name: Build Debug APK
       run: |
         cd android
@@ -113,7 +130,6 @@ jobs:
       run: ./gradlew assembleRelease --no-daemon
 
     # Step 4: Prepare output
-    # Note: buildDir is "../build" relative to android/, so APKs are at build/app/outputs/...
     - name: Prepare APK artifacts
       run: |
         mkdir -p dist
@@ -157,7 +173,8 @@ jobs:
           Mobile Web IDE for Android - based on proot Ubuntu.
 
           ### Changes
-          - Commit: `${{ github.sha }}`
+          - APK commit: `${{ github.sha }}`
+          - IDE commit: `${{ steps.clone_ide.outputs.ide_commit || 'main' }}`
           - Build: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
           - Run: #${{ github.run_number }}
 

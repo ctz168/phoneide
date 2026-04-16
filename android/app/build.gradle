@@ -69,45 +69,9 @@ android {
     }
 }
 
-// Auto-sync IDE files (server.py + utils.py + routes/ + static/) into assets/ide/
-// projectDir = android/app/, so parentFile.parentFile = phoneide/ root
-def ideSourceDir = file(projectDir).parentFile.parentFile // phoneide/ root
-def ideAssetsDir = file('src/main/assets/ide')
-
-task syncIdeFiles {
-    group = 'build'
-    description = 'Sync IDE server files into assets/ide/'
-    doLast {
-        ideAssetsDir.mkdirs()
-        // Copy server.py and utils.py
-        copy {
-            from ideSourceDir
-            include 'server.py'
-            include 'utils.py'
-            include 'version.txt'
-            include 'commit.txt'
-            into ideAssetsDir
-        }
-        // Copy routes/
-        copy {
-            from new File(ideSourceDir, 'routes')
-            into new File(ideAssetsDir, 'routes')
-        }
-        // Copy static/ directory
-        copy {
-            from new File(ideSourceDir, 'static')
-            into new File(ideAssetsDir, 'static')
-        }
-        println 'IDE files synced to assets/ide/'
-    }
-}
-
-// Make sure IDE files are synced before every build
-tasks.whenTaskAdded { task ->
-    if (task.name == 'mergeDebugAssets' || task.name == 'mergeReleaseAssets') {
-        task.dependsOn syncIdeFiles
-    }
-}
+// IDE files (server.py + routes/ + static/) are fetched from ctz168/ide during CI.
+// The CI workflow clones ctz168/ide and copies files into android/app/src/main/assets/ide/
+// before Gradle runs. No sync task needed here.
 
 dependencies {
     // AndroidX

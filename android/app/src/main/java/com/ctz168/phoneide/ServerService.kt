@@ -391,10 +391,11 @@ class ServerService : Service() {
             return
         }
         // Not a git repo - initialize (without checking out remote files)
+        // Remote points to ctz168/ide for code updates
         pm.runInProotSync(
             "cd /root/phoneide && " +
             "git init && " +
-            "git remote add origin https://github.com/ctz168/phoneide.git 2>/dev/null; " +
+            "git remote add origin https://github.com/ctz168/ide.git 2>/dev/null; " +
             "git add -A && " +
             "git commit -m 'initial from assets' 2>/dev/null || true",
             30

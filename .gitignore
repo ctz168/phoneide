@@ -1,17 +1,9 @@
-__pycache__/
-*.pyc
-*.pyo
-.phoneide_tmp.py
-.phoneide_agent_tmp.py
-*.swp
-*.swo
-*~
 .DS_Store
 .vscode/
 .idea/
-phoneide_workspace/
-.venv/
-.env
+*.swp
+*.swo
+*~
 
 # Android build artifacts
 android/app/build/
@@ -22,9 +14,7 @@ android/captures/
 
 # Distribution
 dist/
-
-# IDE assets are generated during CI
-android/app/src/main/assets/
 build/
-__pycache__/
-*.pyc
+
+# IDE code is fetched from ctz168/ide during CI
+android/app/src/main/assets/
