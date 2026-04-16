@@ -72,9 +72,10 @@ jobs:
         cp -r static android/app/src/main/assets/ide/
         # Write version.txt and commit.txt for runtime version detection
         VERSION=$(grep 'versionName' android/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
-        echo "$VERSION" > android/app/src/main/assets/ide/version.txt
+        FULL_TAG="v${VERSION}-build.${{ github.run_number }}"
+        echo "$FULL_TAG" > android/app/src/main/assets/ide/version.txt
         echo "${{ github.sha }}" > android/app/src/main/assets/ide/commit.txt
-        echo "version.txt: $VERSION"
+        echo "version.txt: $FULL_TAG"
         echo "commit.txt: ${{ github.sha }}"
         echo "=== Assets ==="
         find android/app/src/main/assets/ide -type f | wc -l

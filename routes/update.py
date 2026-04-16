@@ -34,18 +34,17 @@ def _fetch_github_json(url, timeout=15):
 
 
 def _parse_version(version_str):
-    """Parse version string like '3.0.40' or '3.0.40-build.6305' into comparable tuple.
+    """Parse version string like '3.0.40' or '3.0.40-build.72' into comparable tuple.
 
-    Returns (major, minor, patch) tuple, ignoring any build suffix.
+    Returns (major, minor, patch, build) tuple. Build defaults to 0 if absent.
     Returns None if parsing fails.
     """
     if not version_str:
         return None
-    # Strip leading 'v' and split on first '-' to remove build suffix
-    cleaned = version_str.lstrip('v').split('-')[0]
-    m = re.match(r'(\d+)\.(\d+)\.(\d+)', cleaned)
+    cleaned = version_str.lstrip('v')
+    m = re.match(r'(\d+)\.(\d+)\.(\d+)(?:-build\.?(\d+))?', cleaned)
     if m:
-        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4) or 0))
     return None
 
 
@@ -204,7 +203,7 @@ def update_check():
             'apk_update': apk_update,
             'code_update': code_update,
             'current_version': current_version,
-            'new_version': latest_tag.lstrip('v').split('-')[0],
+            'new_version': latest_tag.lstrip('v'),
             'latest_tag': latest_tag,
             'release_name': release_name,
             'release_body': release_body,
