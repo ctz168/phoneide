@@ -27,7 +27,11 @@ from routes.run import bp as run_bp
 from routes.git import bp as git_bp
 from routes.chat import bp as chat_bp
 from routes.venv import bp as venv_bp
-from routes.update import bp as update_bp
+try:
+    from routes.update import bp as update_bp
+except Exception as e:
+    print(f"[WARN] Failed to load update module: {e}")
+    update_bp = None
 from routes.server_mgmt import bp as server_mgmt_bp
 
 app.register_blueprint(files_bp)
@@ -35,7 +39,8 @@ app.register_blueprint(run_bp)
 app.register_blueprint(git_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(venv_bp)
-app.register_blueprint(update_bp)
+if update_bp:
+    app.register_blueprint(update_bp)
 app.register_blueprint(server_mgmt_bp)
 
 # ==================== Frontend Serving ====================
