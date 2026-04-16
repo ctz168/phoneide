@@ -67,6 +67,7 @@ jobs:
 
     # Step 2: Clone ctz168/ide and copy IDE files to Android assets
     - name: Clone IDE from ctz168/ide
+      id: clone_ide
       run: |
         IDE_REF="${{ github.event.inputs.ide_ref || 'main' }}"
         echo "Cloning ctz168/ide at ref: $IDE_REF"
