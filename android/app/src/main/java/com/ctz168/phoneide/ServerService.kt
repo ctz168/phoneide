@@ -333,9 +333,28 @@ class ServerService : Service() {
 
     private fun copyIDEFromAssets(filesDir: String) {
         val hostIdeDir = "$filesDir/phoneide"
-        java.io.File(hostIdeDir).mkdirs()
-        val assetManager = assets
-        copyAssetDirRecursive("ide", java.io.File(hostIdeDir))
+        val ideDir = java.io.File(hostIdeDir)
+        ideDir.mkdirs()
+        // Clean up stale .pyc cache before copying new assets
+        deletePycacheRecursive(ideDir)
+        emitLog("[INFO] Copying IDE files from assets to $hostIdeDir")
+        copyAssetDirRecursive("ide", ideDir)
+    }
+
+    /** Delete all __pycache__ directories recursively to prevent stale bytecode. */
+    private fun deletePycacheRecursive(dir: java.io.File) {
+        if (!dir.exists() || !dir.isDirectory) return
+        val children = dir.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory) {
+                if (child.name == "__pycache__") {
+                    child.deleteRecursively()
+                    emitLog("[INFO] Deleted stale cache: ${child.absolutePath}")
+                } else {
+                    deletePycacheRecursive(child)
+                }
+            }
+        }
     }
 
     private fun copyAssetDirRecursive(assetPath: String, destDir: java.io.File) {
@@ -343,17 +362,23 @@ class ServerService : Service() {
         for (file in files) {
             val srcPath = "$assetPath/$file"
             val destFile = java.io.File(destDir, file)
-            try {
-                // Try opening as file first
-                val inputStream = assets.open(srcPath)
-                java.io.FileOutputStream(destFile).use { out ->
-                    inputStream.copyTo(out)
-                }
-                inputStream.close()
-            } catch (_: Exception) {
-                // It's a directory - recurse
-                destDir.mkdirs()
+            // Check if asset entry is a directory by listing its children
+            val children = assets.list(srcPath)
+            if (children != null && children.isNotEmpty()) {
+                // It's a directory
+                destFile.mkdirs()
                 copyAssetDirRecursive(srcPath, destFile)
+            } else {
+                // It's a file — copy it (overwrite existing)
+                try {
+                    assets.open(srcPath).use { input ->
+                        java.io.FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (e: Exception) {
+                    emitLog("[WARN] Failed to copy asset $srcPath: ${e.message}")
+                }
             }
         }
     }
