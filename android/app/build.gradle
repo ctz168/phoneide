@@ -69,19 +69,29 @@ android {
     }
 }
 
-// Auto-sync IDE files (server.py + static/) into assets/ide/
-def ideSourceDir = file(projectDir).parentFile // phoneide/ root
+// Auto-sync IDE files (server.py + utils.py + routes/ + static/) into assets/ide/
+// projectDir = android/app/, so parentFile.parentFile = phoneide/ root
+def ideSourceDir = file(projectDir).parentFile.parentFile // phoneide/ root
 def ideAssetsDir = file('src/main/assets/ide')
 
 task syncIdeFiles {
     group = 'build'
-    description = 'Sync server.py and static/ into assets/ide/'
+    description = 'Sync IDE server files into assets/ide/'
     doLast {
         ideAssetsDir.mkdirs()
-        // Copy server.py
+        // Copy server.py and utils.py
         copy {
-            from new File(ideSourceDir, 'server.py')
+            from ideSourceDir
+            include 'server.py'
+            include 'utils.py'
+            include 'version.txt'
+            include 'commit.txt'
             into ideAssetsDir
+        }
+        // Copy routes/
+        copy {
+            from new File(ideSourceDir, 'routes')
+            into new File(ideAssetsDir, 'routes')
         }
         // Copy static/ directory
         copy {
