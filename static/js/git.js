@@ -869,15 +869,22 @@ const GitManager = (() => {
         for (const [id, handler] of Object.entries(buttonMap)) {
             const btn = document.getElementById(id);
             if (btn) {
+                // Wrap handler with try/catch for error visibility
+                const safeHandler = async () => {
+                    try {
+                        await handler();
+                    } catch (err) {
+                        console.error('[GitManager] Button error (' + id + '):', err);
+                        if (window.showToast) window.showToast('操作失败: ' + err.message, 'error');
+                    }
+                };
+
                 // Use bindTouchButton for reliable Android WebView tap handling
                 if (window.bindTouchButton) {
-                    window.bindTouchButton(btn, () => handler());
+                    window.bindTouchButton(btn, () => safeHandler());
                 } else {
-                    // Fallback: standard click + touchend stopPropagation
-                    btn.addEventListener('click', () => handler());
-                    btn.addEventListener('touchend', (e) => {
-                        e.stopPropagation();
-                    }, { passive: true });
+                    // Fallback: standard click
+                    btn.addEventListener('click', () => safeHandler());
                 }
             }
         }

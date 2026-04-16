@@ -33,11 +33,17 @@ const AppManager = (() => {
                 const el = document.createElement('button');
                 el.textContent = btn.text;
                 el.className = btn.class || '';
-                el.onclick = () => {
+                const handleBtn = () => {
                     overlay.classList.add('hidden');
                     const input = dialogBody.querySelector('input, textarea, select');
                     resolve({ confirmed: btn.value === 'ok', value: input ? input.value : undefined });
                 };
+                // Use bindTouchButton for dialog buttons too (Android WebView fix)
+                if (window.bindTouchButton) {
+                    bindTouchButton(el, handleBtn);
+                } else {
+                    el.onclick = handleBtn;
+                }
                 dialogButtons.appendChild(el);
             });
 
@@ -47,15 +53,23 @@ const AppManager = (() => {
             setTimeout(() => {
                 const input = dialogBody.querySelector('input, textarea');
                 if (input) input.focus();
-            }, 100);
+            }, 150);
 
             // Close on overlay click
-            overlay.onclick = (e) => {
+            const closeOverlay = (e) => {
                 if (e.target === overlay) {
                     overlay.classList.add('hidden');
                     resolve({ confirmed: false });
                 }
             };
+            overlay.onclick = closeOverlay;
+            // Also handle touchend on overlay for Android WebView
+            overlay.addEventListener('touchend', (e) => {
+                if (e.target === overlay) {
+                    e.preventDefault();
+                    closeOverlay(e);
+                }
+            });
         });
     }
 
@@ -116,18 +130,28 @@ const AppManager = (() => {
             const cancelBtn = document.createElement('button');
             cancelBtn.textContent = '取消';
             cancelBtn.className = 'btn-cancel';
-            cancelBtn.onclick = () => { overlay.classList.add('hidden'); resolve(null); };
+            const cancelChoice = () => { overlay.classList.add('hidden'); resolve(null); };
+            if (window.bindTouchButton) {
+                bindTouchButton(cancelBtn, cancelChoice);
+            } else {
+                cancelBtn.onclick = cancelChoice;
+            }
             dialogButtons.appendChild(cancelBtn);
 
             overlay.classList.remove('hidden');
 
             // Bind choice clicks
             dialogBody.querySelectorAll('.choice-option').forEach(btn => {
-                btn.addEventListener('click', () => {
+                const handleChoice = () => {
                     const chosen = btn.dataset.value;
                     overlay.classList.add('hidden');
                     resolve(chosen);
-                });
+                };
+                if (window.bindTouchButton) {
+                    bindTouchButton(btn, handleChoice);
+                } else {
+                    btn.addEventListener('click', handleChoice);
+                }
                 btn.addEventListener('touchstart', () => { btn.style.background = 'var(--bg-hover)'; }, { passive: true });
                 btn.addEventListener('touchend', () => { btn.style.background = 'var(--bg-surface)'; }, { passive: true });
             });
@@ -183,16 +207,16 @@ const AppManager = (() => {
     window.showDialog = showDialog;
 
     // ── Touch-Friendly Button Binding (Android WebView fix) ──
-    // In some Android WebView versions, click events are unreliable on buttons
-    // inside transform-animated or scrollable containers. Using touchend as
-    // primary trigger with click as fallback ensures reliable tap response.
+    // In Android WebView, click events are unreliable on buttons inside
+    // transform-animated sidebar panels. We use touchend as the primary
+    // trigger with a flag to prevent the synthesized click from double-firing.
     function bindTouchButton(btn, handler) {
         if (!btn) return;
-        let lastTrigger = 0;
         let startTouch = null;
-        const THRESHOLD = 8; // px movement to consider as scroll
+        let touchHandled = false;
 
         btn.addEventListener('touchstart', (e) => {
+            touchHandled = false;
             startTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         }, { passive: true });
 
@@ -202,20 +226,18 @@ const AppManager = (() => {
 
         btn.addEventListener('touchend', (e) => {
             if (!startTouch) return; // was scrolling
-            const now = Date.now();
-            if (now - lastTrigger > 150) { // dedup within 150ms
-                lastTrigger = now;
-                handler(e);
-            }
+            touchHandled = true;
+            e.preventDefault(); // prevent browser from synthesizing a click event
+            handler(e);
         });
 
-        // Also bind click as fallback for non-touch devices
+        // Fallback click for non-touch devices (mouse/keyboard)
         btn.addEventListener('click', (e) => {
-            const now = Date.now();
-            if (now - lastTrigger > 150) {
-                lastTrigger = now;
-                handler(e);
+            if (touchHandled) {
+                touchHandled = false; // reset for next interaction
+                return; // already handled by touchend
             }
+            handler(e);
         });
     }
     window.bindTouchButton = bindTouchButton;
@@ -557,9 +579,9 @@ const AppManager = (() => {
         const openFolderBtn = document.getElementById('btn-open-folder');
         if (openFolderBtn) {
             bindTouchButton(openFolderBtn, async () => {
-                const result = await showPromptDialog('打开文件夹', '输入文件夹路径:', FileManager ? FileManager.currentPath : '/workspace');
-                if (result) {
-                    try {
+                try {
+                    const result = await showPromptDialog('打开文件夹', '输入文件夹路径:', FileManager ? FileManager.currentPath : '/workspace');
+                    if (result) {
                         const resp = await fetch('/api/files/open_folder', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -575,9 +597,9 @@ const AppManager = (() => {
                             if (window.FileManager) await FileManager.loadFileList();
                             showToast('工作区已切换', 'success');
                         }
-                    } catch (err) {
-                        showToast('打开文件夹失败: ' + err.message, 'error');
                     }
+                } catch (err) {
+                    showToast('打开文件夹失败: ' + err.message, 'error');
                 }
             });
         }
@@ -585,18 +607,26 @@ const AppManager = (() => {
         // New File button
         const newFileBtn = document.getElementById('btn-new-file');
         if (newFileBtn) {
-            bindTouchButton(newFileBtn, () => {
-                showToast('新建文件...', 'info', 800);
-                if (window.FileManager) FileManager.createFile();
+            bindTouchButton(newFileBtn, async () => {
+                try {
+                    if (window.FileManager) await FileManager.createFile();
+                    else showToast('FileManager 未就绪', 'error');
+                } catch (err) {
+                    showToast('新建文件失败: ' + err.message, 'error');
+                }
             });
         }
 
         // New Folder button
         const newFolderBtn = document.getElementById('btn-new-folder');
         if (newFolderBtn) {
-            bindTouchButton(newFolderBtn, () => {
-                showToast('新建文件夹...', 'info', 800);
-                if (window.FileManager) FileManager.createFolder();
+            bindTouchButton(newFolderBtn, async () => {
+                try {
+                    if (window.FileManager) await FileManager.createFolder();
+                    else showToast('FileManager 未就绪', 'error');
+                } catch (err) {
+                    showToast('新建文件夹失败: ' + err.message, 'error');
+                }
             });
         }
     }
