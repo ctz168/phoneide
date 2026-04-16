@@ -286,6 +286,13 @@ html, body {
     border-radius: var(--radius-sm);
     cursor: pointer;
     white-space: nowrap;
+    min-height: 32px;
+    min-width: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 .panel-toolbar button:active {
     background: var(--bg-hover);

@@ -869,10 +869,16 @@ const GitManager = (() => {
         for (const [id, handler] of Object.entries(buttonMap)) {
             const btn = document.getElementById(id);
             if (btn) {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    handler();
-                });
+                // Use bindTouchButton for reliable Android WebView tap handling
+                if (window.bindTouchButton) {
+                    window.bindTouchButton(btn, () => handler());
+                } else {
+                    // Fallback: standard click + touchend stopPropagation
+                    btn.addEventListener('click', () => handler());
+                    btn.addEventListener('touchend', (e) => {
+                        e.stopPropagation();
+                    }, { passive: true });
+                }
             }
         }
 
@@ -896,11 +902,36 @@ const GitManager = (() => {
         refresh();
     }
 
+    // Delay wireButtons to ensure bindTouchButton is available from app.js.
+    // git.js loads before app.js, so its DOMContentLoaded handler fires first.
+    function ensureWired() {
+        if (window.bindTouchButton) {
+            // app.js already loaded, use touch-friendly binding
+            wireButtons();
+            refresh();
+        } else {
+            // app.js hasn't registered bindTouchButton yet, poll for it
+            const check = setInterval(() => {
+                if (window.bindTouchButton) {
+                    clearInterval(check);
+                    wireButtons();
+                    refresh();
+                }
+            }, 10);
+            // Safety timeout: wire buttons after 500ms regardless (fallback to click)
+            setTimeout(() => {
+                clearInterval(check);
+                wireButtons();
+                refresh();
+            }, 500);
+        }
+    }
+
     // Auto-init when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', ensureWired);
     } else {
-        init();
+        ensureWired();
     }
 
     // ── Public API ─────────────────────────────────────────────────

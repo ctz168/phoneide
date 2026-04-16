@@ -182,6 +182,44 @@ const AppManager = (() => {
     window.showInputDialog = showInputDialog;
     window.showDialog = showDialog;
 
+    // ── Touch-Friendly Button Binding (Android WebView fix) ──
+    // In some Android WebView versions, click events are unreliable on buttons
+    // inside transform-animated or scrollable containers. Using touchend as
+    // primary trigger with click as fallback ensures reliable tap response.
+    function bindTouchButton(btn, handler) {
+        if (!btn) return;
+        let lastTrigger = 0;
+        let startTouch = null;
+        const THRESHOLD = 8; // px movement to consider as scroll
+
+        btn.addEventListener('touchstart', (e) => {
+            startTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+
+        btn.addEventListener('touchmove', () => {
+            startTouch = null; // moved = scroll, not tap
+        }, { passive: true });
+
+        btn.addEventListener('touchend', (e) => {
+            if (!startTouch) return; // was scrolling
+            const now = Date.now();
+            if (now - lastTrigger > 150) { // dedup within 150ms
+                lastTrigger = now;
+                handler(e);
+            }
+        });
+
+        // Also bind click as fallback for non-touch devices
+        btn.addEventListener('click', (e) => {
+            const now = Date.now();
+            if (now - lastTrigger > 150) {
+                lastTrigger = now;
+                handler(e);
+            }
+        });
+    }
+    window.bindTouchButton = bindTouchButton;
+
     // ── Utility Functions ──
     function escapeHTML(str) {
         const div = document.createElement('div');
@@ -518,7 +556,7 @@ const AppManager = (() => {
         // Open Folder button
         const openFolderBtn = document.getElementById('btn-open-folder');
         if (openFolderBtn) {
-            openFolderBtn.addEventListener('click', async () => {
+            bindTouchButton(openFolderBtn, async () => {
                 const result = await showPromptDialog('打开文件夹', '输入文件夹路径:', FileManager ? FileManager.currentPath : '/workspace');
                 if (result) {
                     try {
@@ -547,7 +585,8 @@ const AppManager = (() => {
         // New File button
         const newFileBtn = document.getElementById('btn-new-file');
         if (newFileBtn) {
-            newFileBtn.addEventListener('click', () => {
+            bindTouchButton(newFileBtn, () => {
+                showToast('新建文件...', 'info', 800);
                 if (window.FileManager) FileManager.createFile();
             });
         }
@@ -555,7 +594,8 @@ const AppManager = (() => {
         // New Folder button
         const newFolderBtn = document.getElementById('btn-new-folder');
         if (newFolderBtn) {
-            newFolderBtn.addEventListener('click', () => {
+            bindTouchButton(newFolderBtn, () => {
+                showToast('新建文件夹...', 'info', 800);
                 if (window.FileManager) FileManager.createFolder();
             });
         }
