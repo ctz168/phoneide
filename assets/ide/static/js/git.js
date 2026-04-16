@@ -150,7 +150,7 @@ const GitManager = (() => {
             const clonePath = data.path;
             if (window.FileManager && clonePath) {
                 // clonePath is relative from server, prepend /workspace for FileManager
-                const fullPath = '/workspace/' + clonePath.replace(/^\\//, '');
+                const fullPath = '/workspace/' + clonePath.replace(/^\//, '');
                 await window.FileManager.openFolder(fullPath);
             }
 
@@ -869,10 +869,23 @@ const GitManager = (() => {
         for (const [id, handler] of Object.entries(buttonMap)) {
             const btn = document.getElementById(id);
             if (btn) {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    handler();
-                });
+                // Wrap handler with try/catch for error visibility
+                const safeHandler = async () => {
+                    try {
+                        await handler();
+                    } catch (err) {
+                        console.error('[GitManager] Button error (' + id + '):', err);
+                        if (window.showToast) window.showToast('操作失败: ' + err.message, 'error');
+                    }
+                };
+
+                // Use bindTouchButton for reliable Android WebView tap handling
+                if (window.bindTouchButton) {
+                    window.bindTouchButton(btn, () => safeHandler());
+                } else {
+                    // Fallback: standard click
+                    btn.addEventListener('click', () => safeHandler());
+                }
             }
         }
 
@@ -896,11 +909,43 @@ const GitManager = (() => {
         refresh();
     }
 
+    // Delay wireButtons to ensure bindTouchButton is available from app.js.
+    // git.js loads before app.js, so its DOMContentLoaded handler fires first.
+    let _wired = false;
+    function ensureWired() {
+        if (_wired) return;
+        if (window.bindTouchButton) {
+            // app.js already loaded, use touch-friendly binding
+            _wired = true;
+            wireButtons();
+            refresh();
+        } else {
+            // app.js hasn't registered bindTouchButton yet, poll for it
+            const check = setInterval(() => {
+                if (window.bindTouchButton) {
+                    clearInterval(check);
+                    _wired = true;
+                    wireButtons();
+                    refresh();
+                }
+            }, 10);
+            // Safety timeout: wire buttons after 500ms regardless (fallback to click)
+            setTimeout(() => {
+                clearInterval(check);
+                if (!_wired) {
+                    _wired = true;
+                    wireButtons();
+                    refresh();
+                }
+            }, 500);
+        }
+    }
+
     // Auto-init when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', ensureWired);
     } else {
-        init();
+        ensureWired();
     }
 
     // ── Public API ─────────────────────────────────────────────────

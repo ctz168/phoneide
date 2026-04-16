@@ -150,7 +150,7 @@ const GitManager = (() => {
             const clonePath = data.path;
             if (window.FileManager && clonePath) {
                 // clonePath is relative from server, prepend /workspace for FileManager
-                const fullPath = '/workspace/' + clonePath.replace(/^\\//, '');
+                const fullPath = '/workspace/' + clonePath.replace(/^\//, '');
                 await window.FileManager.openFolder(fullPath);
             }
 
@@ -911,9 +911,12 @@ const GitManager = (() => {
 
     // Delay wireButtons to ensure bindTouchButton is available from app.js.
     // git.js loads before app.js, so its DOMContentLoaded handler fires first.
+    let _wired = false;
     function ensureWired() {
+        if (_wired) return;
         if (window.bindTouchButton) {
             // app.js already loaded, use touch-friendly binding
+            _wired = true;
             wireButtons();
             refresh();
         } else {
@@ -921,6 +924,7 @@ const GitManager = (() => {
             const check = setInterval(() => {
                 if (window.bindTouchButton) {
                     clearInterval(check);
+                    _wired = true;
                     wireButtons();
                     refresh();
                 }
@@ -928,8 +932,11 @@ const GitManager = (() => {
             // Safety timeout: wire buttons after 500ms regardless (fallback to click)
             setTimeout(() => {
                 clearInterval(check);
-                wireButtons();
-                refresh();
+                if (!_wired) {
+                    _wired = true;
+                    wireButtons();
+                    refresh();
+                }
             }, 500);
         }
     }
