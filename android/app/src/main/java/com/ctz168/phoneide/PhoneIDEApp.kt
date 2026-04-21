@@ -27,8 +27,8 @@ class PhoneIDEApp : Application() {
         const val PREF_BATTERY_OPT_ASKED = "battery_opt_asked"
 
         // Version (synced with build.gradle)
-        const val VERSION_NAME = "3.0.47"
-        const val VERSION_CODE = 3047
+        const val VERSION_NAME = "3.0.48"
+        const val VERSION_CODE = 3048
 
         /** Last crash info saved by global exception handler. */
         var lastCrashInfo: String? = null
