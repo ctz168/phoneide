@@ -2,7 +2,7 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1510"
+    android:background="#1A1814"
     android:fitsSystemWindows="true">
 
     <!-- Main WebView -->
@@ -18,7 +18,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_above="@id/server_management_bar"
-        android:background="#1A1510"
+        android:background="#1A1814"
         android:gravity="center"
         android:orientation="vertical"
         android:visibility="gone">
@@ -27,7 +27,7 @@
             android:id="@+id/progress_bar"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:indeterminateTint="#E8853D" />
+            android:indeterminateTint="#C4A97D" />
 
         <TextView
             android:id="@+id/status_text"
@@ -45,7 +45,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_above="@id/server_management_bar"
-        android:background="#1A1510"
+        android:background="#1A1814"
         android:gravity="center"
         android:orientation="vertical"
         android:padding="32dp"
@@ -82,7 +82,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:background="#231E17"
+        android:background="#252220"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="4dp"

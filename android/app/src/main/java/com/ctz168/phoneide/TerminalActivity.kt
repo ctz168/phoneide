@@ -93,7 +93,7 @@ class TerminalActivity : AppCompatActivity() {
         // since terminalContainer is a FrameLayout
         val baseLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#1A1510"))
+            setBackgroundColor(Color.parseColor("#1A1814"))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -112,7 +112,7 @@ class TerminalActivity : AppCompatActivity() {
         outputView = TextView(context).apply {
             typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#6BC96B"))
-            setBackgroundColor(Color.parseColor("#1A1510"))
+            setBackgroundColor(Color.parseColor("#1A1814"))
             textSize = currentFontSize.toFloat()
             setPadding(12, 12, 12, 12)
             setTextIsSelectable(true)
@@ -125,7 +125,7 @@ class TerminalActivity : AppCompatActivity() {
         // Input area at bottom
         inputLine = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#231E17"))
+            setBackgroundColor(Color.parseColor("#252220"))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 8, 8, 8)
             layoutParams = LinearLayout.LayoutParams(
@@ -136,7 +136,7 @@ class TerminalActivity : AppCompatActivity() {
 
         inputPrompt = TextView(context).apply {
             text = "root@phoneide:~# "
-            setTextColor(Color.parseColor("#E8853D"))
+            setTextColor(Color.parseColor("#C4A97D"))
             typeface = Typeface.MONOSPACE
             textSize = currentFontSize.toFloat()
             setPadding(4, 0, 4, 0)
@@ -231,8 +231,14 @@ class TerminalActivity : AppCompatActivity() {
             appendOutput("${inputPrompt.text}${command}\n")
         }
 
-        // Return focus to input field for next command
-        inputField.requestFocus()
+        // Return focus to input field and keep soft keyboard open.
+        // postDelayed ensures the keyboard stays visible even when
+        // shell output is being appended asynchronously.
+        inputField.postDelayed({
+            inputField.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(inputField, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }, 50)
 
         scope.launch {
             try {

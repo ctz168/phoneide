@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1510"
+    android:background="#1A1814"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="32dp">
@@ -12,7 +12,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="&lt;/&gt;"
-        android:textColor="#E8853D"
+        android:textColor="#C4A97D"
         android:textSize="64sp"
         android:textStyle="bold" />
 
@@ -32,9 +32,9 @@
         android:layout_width="match_parent"
         android:layout_height="4dp"
         android:layout_marginTop="48dp"
-        android:background="#2D2620"
+        android:background="#252220"
         android:indeterminate="true"
-        android:progressTint="#E8853D" />
+        android:progressTint="#C4A97D" />
 
     <TextView
         android:id="@+id/setup_status"
@@ -51,7 +51,7 @@
         android:layout_height="0dp"
         android:layout_marginTop="24dp"
         android:layout_weight="1"
-        android:background="#231E17"
+        android:background="#252220"
         android:padding="12dp">
 
         <TextView

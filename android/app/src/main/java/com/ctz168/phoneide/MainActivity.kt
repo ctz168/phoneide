@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Don't use setDecorFitsSystemWindows(false) - it causes bottom bar
             // to be hidden behind system navigation. Let the layout handle it.
-            window.statusBarColor = android.graphics.Color.parseColor("#1A1510")
+            window.statusBarColor = android.graphics.Color.parseColor("#1A1814")
         } else {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (
@@ -590,18 +590,18 @@ class MainActivity : AppCompatActivity() {
         val drawable = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             if (isRunning) {
-                setColor(Color.parseColor("#6BC96B")) // Warm green
+                setColor(Color.parseColor("#A8C49A")) // Claude Code sage green
             } else {
-                setColor(Color.parseColor("#E85D5D")) // Warm red
+                setColor(Color.parseColor("#D46A6A")) // Claude Code warm red
             }
         }
         statusIndicator.background = drawable
         if (isRunning) {
             statusLabel.text = getString(R.string.server_status_running)
-            statusLabel.setTextColor(Color.parseColor("#6BC96B"))
+            statusLabel.setTextColor(Color.parseColor("#A8C49A"))
         } else {
             statusLabel.text = getString(R.string.server_status_stopped)
-            statusLabel.setTextColor(Color.parseColor("#E85D5D"))
+            statusLabel.setTextColor(Color.parseColor("#D46A6A"))
         }
     }
 
@@ -669,7 +669,7 @@ class MainActivity : AppCompatActivity() {
             typeface = android.graphics.Typeface.MONOSPACE
             textSize = 10f
             setTextColor(Color.parseColor("#F5F0EB"))
-            setBackgroundColor(Color.parseColor("#1A1510"))
+            setBackgroundColor(Color.parseColor("#1A1814"))
             setPadding(16, 16, 16, 16)
             text = "Loading logs...\n"
         }
