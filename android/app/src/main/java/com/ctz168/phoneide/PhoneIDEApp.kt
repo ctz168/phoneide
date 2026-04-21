@@ -14,8 +14,8 @@ class PhoneIDEApp : Application() {
 
     companion object {
         const val TAG = "PhoneIDE"
-        const val SERVER_PORT = 1239
-        const val SERVER_URL = "http://127.0.0.1:1239"
+        const val SERVER_PORT = 12345
+        const val SERVER_URL = "http://127.0.0.1:12345"
         const val NOTIFICATION_CHANNEL_ID = "phoneide_server"
         const val NOTIFICATION_ID = 1
         const val IDE_MSG_CHANNEL_ID = "phoneide_messages"
@@ -27,8 +27,8 @@ class PhoneIDEApp : Application() {
         const val PREF_BATTERY_OPT_ASKED = "battery_opt_asked"
 
         // Version (synced with build.gradle)
-        const val VERSION_NAME = "3.0.48"
-        const val VERSION_CODE = 3048
+        const val VERSION_NAME = "3.1.0"
+        const val VERSION_CODE = 30100
 
         /** Last crash info saved by global exception handler. */
         var lastCrashInfo: String? = null
