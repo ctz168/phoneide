@@ -42,6 +42,13 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Install Android SDK components
+      run: |
+        # Explicitly install the platform and build-tools required by compileSdk/targetSdk
+        sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+        # Accept all remaining licenses
+        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
     - name: Install system dependencies
       run: |
         sudo apt-get update -qq
@@ -109,10 +116,10 @@ jobs:
         echo "All critical files verified"
 
     - name: Build Debug APK
+      working-directory: android
       run: |
-        cd android
         chmod +x gradlew
-        ./gradlew assembleDebug --no-daemon
+        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
 
     - name: Generate signing keystore
       run: |
@@ -128,7 +135,7 @@ jobs:
 
     - name: Build Release APK
       working-directory: android
-      run: ./gradlew assembleRelease --no-daemon
+      run: ./gradlew assembleRelease --no-daemon --stacktrace 2>&1
 
     # Step 4: Prepare output
     - name: Prepare APK artifacts
