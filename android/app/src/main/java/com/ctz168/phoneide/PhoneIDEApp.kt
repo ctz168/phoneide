@@ -18,6 +18,8 @@ class PhoneIDEApp : Application() {
         const val SERVER_URL = "http://127.0.0.1:1239"
         const val NOTIFICATION_CHANNEL_ID = "phoneide_server"
         const val NOTIFICATION_ID = 1
+        const val IDE_MSG_CHANNEL_ID = "phoneide_messages"
+        const val IDE_MSG_NOTIFICATION_ID_BASE = 1000
 
         const val PREF_NAME = "phoneide_prefs"
         const val PREF_SETUP_COMPLETE = "setup_complete"
@@ -92,7 +94,10 @@ class PhoneIDEApp : Application() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Server foreground service channel (low importance, silent)
+            val serverChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 "IDE Server",
                 NotificationManager.IMPORTANCE_LOW
@@ -100,8 +105,20 @@ class PhoneIDEApp : Application() {
                 description = "PhoneIDE background server"
                 setShowBadge(false)
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(serverChannel)
+
+            // IDE message channel (high importance, pops up, with sound)
+            val msgChannel = NotificationChannel(
+                IDE_MSG_CHANNEL_ID,
+                "IDE Messages",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications from the IDE (errors, task completion, etc.)"
+                setShowBadge(true)
+                enableVibration(true)
+                setBypassDnd(false)
+            }
+            manager.createNotificationChannel(msgChannel)
         }
     }
 

@@ -3,6 +3,7 @@ package com.ctz168.phoneide
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.Notification
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -247,6 +248,9 @@ class MainActivity : AppCompatActivity() {
     // Native Bridge
     // ========================
 
+    private var ideMsgNotificationId = PhoneIDEApp.IDE_MSG_NOTIFICATION_ID_BASE
+    private val ideNotificationTimer = mutableMapOf<Int, kotlinx.coroutines.Job>()
+
     inner class NativeBridge {
         @JavascriptInterface
         fun showToast(msg: String) {
@@ -255,6 +259,78 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+
+        /**
+         * Show an Android notification from the IDE web page.
+         * Called by showToast() in app.js when running inside the APK.
+         *
+         * @param title   Notification title (e.g. "PhoneIDE")
+         * @param message Notification body text
+         * @param type    "error" | "success" | "info" | "warning" — controls icon color
+         * @param durationMs Auto-dismiss after this many ms (0 = manual dismiss)
+         */
+        @JavascriptInterface
+        fun showNotification(title: String, message: String, type: String, durationMs: Int) {
+            Log.d(TAG, "IDE notification: [$type] $title — $message")
+            scope.launch {
+                withContext(Dispatchers.Main) {
+                    showIdeNotification(title, message, type, durationMs)
+                }
+            }
+        }
+    }
+
+    @SuppressLint("LaunchActivityFromNotification")
+    private fun showIdeNotification(title: String, message: String, type: String, durationMs: Int) {
+        val notificationId = ideMsgNotificationId++
+
+        // Icon based on type
+        val iconRes = when (type) {
+            "error" -> android.R.drawable.ic_dialog_alert
+            "success" -> android.R.drawable.ic_menu_agenda
+            "warning" -> android.R.drawable.ic_dialog_info
+            else -> android.R.drawable.ic_dialog_info
+        }
+
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, PhoneIDEApp.IDE_MSG_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setPriority(Notification.PRIORITY_HIGH)
+        }
+
+        val notification = builder
+            .setSmallIcon(iconRes)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(Notification.BigTextStyle().bigText(message))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(true)
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(notificationId, notification)
+
+        // Auto-dismiss after duration
+        if (durationMs > 0) {
+            val existingTimer = ideNotificationTimer[notificationId]
+            existingTimer?.cancel()
+            val timer = scope.launch {
+                delay(durationMs.toLong())
+                manager.cancel(notificationId)
+                ideNotificationTimer.remove(notificationId)
+            }
+            ideNotificationTimer[notificationId] = timer
         }
     }
 
