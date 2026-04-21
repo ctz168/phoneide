@@ -59,7 +59,15 @@ class MainActivity : AppCompatActivity() {
         private const val HEALTH_POLL_INTERVAL = 2_000L
     }
 
-    private lateinit var webView: WebView
+    /** Get the actual installed APK version from PackageManager (not hardcoded constant) */
+    private fun installedVersionName(): String {
+        return try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            pInfo.versionName ?: PhoneIDEApp.VERSION_NAME
+        } catch (_: Exception) {
+            PhoneIDEApp.VERSION_NAME
+        }
+    }
     private lateinit var loadingOverlay: View
     private lateinit var progressBar: View
     private lateinit var statusText: View
@@ -860,10 +868,10 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // Compare versions: check if latest is newer than current
-                if (!isNewerVersion(latestVersion, PhoneIDEApp.VERSION_NAME)) {
+                if (!isNewerVersion(latestVersion, installedVersionName())) {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle("已是最新版本")
-                        .setMessage("当前版本: v${PhoneIDEApp.VERSION_NAME}\n最新版本: $latestVersion")
+                        .setMessage("当前版本: v${installedVersionName()}\n最新版本: $latestVersion")
                         .setPositiveButton("确定", null)
                         .show()
                     return@launch
@@ -873,7 +881,7 @@ class MainActivity : AppCompatActivity() {
                 MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("发现新版本 $latestVersion")
                     .setMessage(
-                        "当前版本: v${PhoneIDEApp.VERSION_NAME}\n" +
+                        "当前版本: v${installedVersionName()}\n" +
                         "最新版本: $latestVersion\n\n" +
                         "${releaseBody.take(500)}\n\n" +
                         "点击「立即更新」下载并安装新版本 APK。"
@@ -1125,7 +1133,7 @@ class MainActivity : AppCompatActivity() {
             }
             R.id.menu_about -> {
                 MaterialAlertDialogBuilder(this)
-                    .setTitle("PhoneIDE v${PhoneIDEApp.VERSION_NAME}")
+                    .setTitle("PhoneIDE v${installedVersionName()}")
                     .setMessage("基于 proot Ubuntu 的手机端 Web IDE\n\n" +
                             "功能：代码编辑、终端、Git、LLM Agent\n" +
                             "端口：${PhoneIDEApp.SERVER_PORT}")
