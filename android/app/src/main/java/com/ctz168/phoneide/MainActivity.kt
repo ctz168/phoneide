@@ -70,7 +70,8 @@ class MainActivity : AppCompatActivity() {
     // Server management bar views
     private lateinit var statusIndicator: View
     private lateinit var statusLabel: TextView
-    private lateinit var btnRestart: View
+    private lateinit var btnStart: View
+    private lateinit var btnStop: View
     private lateinit var btnUpdate: View
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -162,13 +163,15 @@ class MainActivity : AppCompatActivity() {
         // Server management bar views
         statusIndicator = findViewById(R.id.status_indicator)
         statusLabel = findViewById(R.id.status_label)
-        btnRestart = findViewById(R.id.btn_restart)
+        btnStart = findViewById(R.id.btn_start)
+        btnStop = findViewById(R.id.btn_stop)
         btnUpdate = findViewById(R.id.btn_update)
 
         retryButton.setOnClickListener { connectToServer() }
 
         // Server management button handlers
-        btnRestart.setOnClickListener { handleRestart() }
+        btnStart.setOnClickListener { handleStart() }
+        btnStop.setOnClickListener { handleStop() }
         btnUpdate.setOnClickListener { handleCodeUpdate() }
 
         // Terminal button
@@ -606,32 +609,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ========================
-    // Restart Button Handler
+    // Start Button Handler
     // ========================
 
-    private fun handleRestart() {
-        btnRestart.isEnabled = false
+    private fun handleStart() {
+        btnStart.isEnabled = false
         scope.launch {
             try {
-                // Show restarting toast/status
                 updateStatusIndicator(false)
-                statusLabel.text = getString(R.string.server_restarting)
+                statusLabel.text = getString(R.string.server_starting)
 
-                // POST to /api/server/restart
-                val success = withContext(Dispatchers.IO) {
-                    postToServer("/api/server/restart")
-                }
-
-                if (!success) {
-                    // Fallback: restart Android service directly
-                    withContext(Dispatchers.Main) {
-                        stopServerService()
-                        startServerService()
-                    }
-                }
+                // Start the server service
+                startServerService()
 
                 // Poll health every 2 seconds until server responds
-                showLoading(getString(R.string.server_restarting))
+                showLoading(getString(R.string.server_starting))
                 var attempts = 0
                 val maxAttempts = 30
                 while (attempts < maxAttempts && isActive) {
@@ -645,16 +637,65 @@ class MainActivity : AppCompatActivity() {
                     attempts++
                 }
 
-                // Reload WebView
                 hideAllOverlays()
                 loadIDE()
                 updateStatusIndicator(true)
             } catch (e: Exception) {
-                Log.e(TAG, "Restart failed", e)
+                Log.e(TAG, "Start failed", e)
                 hideAllOverlays()
                 updateStatusIndicator(false)
+                Toast.makeText(this@MainActivity, "启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
-                btnRestart.isEnabled = true
+                btnStart.isEnabled = true
+            }
+        }
+    }
+
+    // ========================
+    // Stop Button Handler
+    // ========================
+
+    private fun handleStop() {
+        btnStop.isEnabled = false
+        scope.launch {
+            try {
+                updateStatusIndicator(false)
+                statusLabel.text = getString(R.string.server_stopping)
+
+                // Try graceful shutdown via HTTP first
+                withContext(Dispatchers.IO) {
+                    postToServer("/api/server/stop")
+                }
+
+                // Stop the Android service
+                stopServerService()
+
+                // Wait briefly for process to die
+                delay(1000)
+
+                // Verify server is actually down
+                var attempts = 0
+                while (attempts < 10 && isActive) {
+                    val isUp = withContext(Dispatchers.IO) {
+                        checkServerConnection()
+                    }
+                    if (!isUp) {
+                        break
+                    }
+                    attempts++
+                    delay(500)
+                }
+
+                updateStatusIndicator(false)
+                statusLabel.text = getString(R.string.server_status_stopped)
+                webView.loadUrl("about:blank")
+                showError("服务已停止")
+            } catch (e: Exception) {
+                Log.e(TAG, "Stop failed", e)
+                updateStatusIndicator(false)
+                statusLabel.text = getString(R.string.server_status_stopped)
+            } finally {
+                btnStop.isEnabled = true
             }
         }
     }

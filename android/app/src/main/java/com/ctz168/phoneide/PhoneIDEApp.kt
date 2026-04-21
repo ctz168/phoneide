@@ -25,8 +25,8 @@ class PhoneIDEApp : Application() {
         const val PREF_SETUP_COMPLETE = "setup_complete"
 
         // Version (synced with build.gradle)
-        const val VERSION_NAME = "3.0.44"
-        const val VERSION_CODE = 44
+        const val VERSION_NAME = "3.0.45"
+        const val VERSION_CODE = 45
 
         /** Last crash info saved by global exception handler. */
         var lastCrashInfo: String? = null

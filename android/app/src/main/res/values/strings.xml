@@ -42,6 +42,8 @@
     <string name="server_status_running">运行中</string>
     <string name="server_status_stopped">已停止</string>
     <string name="btn_restart">重启</string>
+    <string name="btn_start">启动</string>
+    <string name="btn_stop">停止</string>
     <string name="btn_logs">日志</string>
     <string name="btn_update">更新</string>
     <string name="btn_terminal">终端</string>
@@ -51,4 +53,6 @@
     <string name="update_current">已是最新版本</string>
     <string name="server_logs">服务器日志</string>
     <string name="server_restarting">重启中...</string>
+    <string name="server_starting">启动中...</string>
+    <string name="server_stopping">停止中...</string>
 </resources>

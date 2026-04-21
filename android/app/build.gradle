@@ -22,8 +22,8 @@ android {
         applicationId = "com.ctz168.phoneide"
         minSdk = 29
         targetSdk = 36
-        versionCode = 44
-        versionName = "3.0.44"
+        versionCode = 45
+        versionName = "3.0.45"
     }
 
     compileOptions {
