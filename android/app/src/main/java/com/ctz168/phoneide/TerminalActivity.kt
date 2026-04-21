@@ -64,6 +64,10 @@ class TerminalActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Match status bar to terminal background
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.statusBarColor = android.graphics.Color.parseColor("#1A1814")
+        }
         setContentView(R.layout.activity_terminal)
 
         initViews()
@@ -294,7 +298,8 @@ class TerminalActivity : AppCompatActivity() {
                 sessionProcess = pb.start()
                 writer = BufferedWriter(OutputStreamWriter(sessionProcess!!.outputStream))
 
-                appendOutput("Shell started. Type 'exit' to close.\n\n")
+                // No startup messages — suppress proot warnings and boot noise.
+                // The prompt itself signals the shell is ready.
 
                 // Read all output from the merged stdout+stderr stream
                 val reader = BufferedReader(InputStreamReader(sessionProcess!!.inputStream))
@@ -333,6 +338,13 @@ class TerminalActivity : AppCompatActivity() {
         var cleaned = oscPattern.matcher(text).replaceAll("")
         // Then strip CSI sequences (colors, cursor movement, etc.)
         cleaned = ansiPattern.matcher(cleaned).replaceAll("")
+        // Filter out proot warnings (harmless but noisy)
+        cleaned = cleaned.lines()
+            .filter { line ->
+                !line.contains("proot warning") &&
+                !line.contains("can't sanitize")
+            }
+            .joinToString("\n")
         return cleaned
     }
 
