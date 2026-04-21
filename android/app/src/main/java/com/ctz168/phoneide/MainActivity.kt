@@ -69,6 +69,8 @@ class MainActivity : AppCompatActivity() {
             PhoneIDEApp.VERSION_NAME
         }
     }
+
+    private lateinit var webView: WebView
     private lateinit var loadingOverlay: View
     private lateinit var progressBar: View
     private lateinit var statusText: View
