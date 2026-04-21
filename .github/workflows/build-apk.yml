@@ -121,17 +121,12 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
 
-    - name: Generate signing keystore
+    - name: Decode signing keystore from secrets
       run: |
-        keytool -genkeypair \
-          -v -keystore android/keystore.jks \
-          -alias phoneide \
-          -keyalg RSA -keysize 2048 \
-          -validity 10000 \
-          -storepass phoneide123 \
-          -keypass phoneide123 \
-          -dname "CN=PhoneIDE, OU=Dev, O=ctz168, L=Unknown, ST=Unknown, C=CN"
-        printf 'storeFile=keystore.jks\nstorePassword=phoneide123\nkeyAlias=phoneide\nkeyPassword=phoneide123\n' > android/key.properties
+        # Use fixed keystore from GitHub Secrets for consistent APK signatures
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/keystore.jks
+        printf 'storeFile=keystore.jks\nstorePassword=${{ secrets.KEYSTORE_PASSWORD }}\nkeyAlias=${{ secrets.KEYSTORE_ALIAS }}\nkeyPassword=${{ secrets.KEYSTORE_PASSWORD }}\n' > android/key.properties
+        echo "Keystore decoded from secrets"
 
     - name: Build Release APK
       working-directory: android

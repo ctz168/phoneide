@@ -11,6 +11,9 @@ android/.gradle/
 android/local.properties
 android/captures/
 *.keystore
+*.jks
+*.jks.base64
+android/key.properties
 
 # Distribution
 dist/
