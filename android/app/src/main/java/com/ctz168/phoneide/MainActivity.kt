@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -318,7 +320,7 @@ class MainActivity : AppCompatActivity() {
             .setShowWhen(true)
             .build()
 
-        val manager = getSystemService(NotificationManager::class.java)
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(notificationId, notification)
 
         // Auto-dismiss after duration
@@ -836,7 +838,8 @@ class MainActivity : AppCompatActivity() {
                         "点击「立即更新」下载并安装新版本 APK。"
                     )
                     .setPositiveButton("立即更新") { _, _ ->
-                        downloadAndInstallApk(apkUrl, latestVersion)
+                        // Trigger APK download via UpdateBridge (same method used by JS bridge)
+                        UpdateBridge().downloadAndInstallApk(apkUrl, latestVersion)
                     }
                     .setNegativeButton("稍后", null)
                     .show()
