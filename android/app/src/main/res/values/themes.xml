@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.PhoneIDE" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#1E88E5</item>
-        <item name="colorPrimaryVariant">#1565C0</item>
+        <item name="colorPrimary">#E8853D</item>
+        <item name="colorPrimaryVariant">#C46A1A</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#00ACC1</item>
-        <item name="colorSecondaryVariant">#00838F</item>
+        <item name="colorSecondary">#D4915E</item>
+        <item name="colorSecondaryVariant">#B87A4A</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="android:statusBarColor">#0D1117</item>
-        <item name="android:navigationBarColor">#0D1117</item>
-        <item name="android:windowBackground">#0D1117</item>
+        <item name="android:statusBarColor">#1A1510</item>
+        <item name="android:navigationBarColor">#1A1510</item>
+        <item name="android:windowBackground">#1A1510</item>
     </style>
 
     <style name="Theme.PhoneIDE.Setup" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#1E88E5</item>
-        <item name="android:statusBarColor">#1E88E5</item>
-        <item name="android:navigationBarColor">#1E88E5</item>
-        <item name="android:windowBackground">#0D1117</item>
+        <item name="colorPrimary">#E8853D</item>
+        <item name="android:statusBarColor">#E8853D</item>
+        <item name="android:navigationBarColor">#E8853D</item>
+        <item name="android:windowBackground">#1A1510</item>
     </style>
 </resources>

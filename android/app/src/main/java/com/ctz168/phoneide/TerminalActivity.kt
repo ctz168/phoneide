@@ -93,7 +93,7 @@ class TerminalActivity : AppCompatActivity() {
         // since terminalContainer is a FrameLayout
         val baseLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0D1117"))
+            setBackgroundColor(Color.parseColor("#1A1510"))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -111,8 +111,8 @@ class TerminalActivity : AppCompatActivity() {
 
         outputView = TextView(context).apply {
             typeface = Typeface.MONOSPACE
-            setTextColor(Color.parseColor("#7EE787"))
-            setBackgroundColor(Color.parseColor("#0D1117"))
+            setTextColor(Color.parseColor("#6BC96B"))
+            setBackgroundColor(Color.parseColor("#1A1510"))
             textSize = currentFontSize.toFloat()
             setPadding(12, 12, 12, 12)
             setTextIsSelectable(true)
@@ -125,7 +125,7 @@ class TerminalActivity : AppCompatActivity() {
         // Input area at bottom
         inputLine = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#161B22"))
+            setBackgroundColor(Color.parseColor("#231E17"))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 8, 8, 8)
             layoutParams = LinearLayout.LayoutParams(
@@ -136,7 +136,7 @@ class TerminalActivity : AppCompatActivity() {
 
         inputPrompt = TextView(context).apply {
             text = "root@phoneide:~# "
-            setTextColor(Color.parseColor("#58A6FF"))
+            setTextColor(Color.parseColor("#E8853D"))
             typeface = Typeface.MONOSPACE
             textSize = currentFontSize.toFloat()
             setPadding(4, 0, 4, 0)
@@ -150,13 +150,13 @@ class TerminalActivity : AppCompatActivity() {
 
         // MUST be EditText for proper soft keyboard input handling
         inputField = EditText(context).apply {
-            setTextColor(Color.parseColor("#C9D1D9"))
+            setTextColor(Color.parseColor("#F5F0EB"))
             setBackgroundColor(Color.TRANSPARENT)
             typeface = Typeface.MONOSPACE
             textSize = currentFontSize.toFloat()
             setSingleLine()
             imeOptions = EditorInfo.IME_ACTION_SEND
-            setHintTextColor(Color.parseColor("#484F58"))
+            setHintTextColor(Color.parseColor("#7D7068"))
             hint = "Enter command..."
         }
         inputScroll.addView(inputField)

@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D1117"
+    android:background="#1A1510"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="32dp">
@@ -12,7 +12,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="&lt;/&gt;"
-        android:textColor="#1E88E5"
+        android:textColor="#E8853D"
         android:textSize="64sp"
         android:textStyle="bold" />
 
@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="PhoneIDE"
-        android:textColor="#C9D1D9"
+        android:textColor="#F5F0EB"
         android:textSize="28sp"
         android:textStyle="bold" />
 
@@ -32,9 +32,9 @@
         android:layout_width="match_parent"
         android:layout_height="4dp"
         android:layout_marginTop="48dp"
-        android:background="#21262D"
+        android:background="#2D2620"
         android:indeterminate="true"
-        android:progressTint="#1E88E5" />
+        android:progressTint="#E8853D" />
 
     <TextView
         android:id="@+id/setup_status"
@@ -42,7 +42,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
         android:text="正在检查环境..."
-        android:textColor="#8B949E"
+        android:textColor="#B5A898"
         android:textSize="14sp" />
 
     <!-- Log output -->
@@ -51,7 +51,7 @@
         android:layout_height="0dp"
         android:layout_marginTop="24dp"
         android:layout_weight="1"
-        android:background="#161B22"
+        android:background="#231E17"
         android:padding="12dp">
 
         <TextView
@@ -59,7 +59,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textColor="#7EE787"
+            android:textColor="#6BC96B"
             android:textSize="11sp" />
     </ScrollView>
 
