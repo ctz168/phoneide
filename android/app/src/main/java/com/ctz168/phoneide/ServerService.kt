@@ -180,7 +180,7 @@ class ServerService : Service() {
                 emitLog("[INFO] Starting Flask server via proot...")
                 updateNotificationRunning()
 
-                val command = "cd /root/phoneide && PHONEIDE_VERSION=${PhoneIDEApp.VERSION_NAME} python3 server.py 2>&1"
+                val command = "cd /root/phoneide && PHONEIDE_PORT=${PhoneIDEApp.SERVER_PORT} PHONEIDE_VERSION=${PhoneIDEApp.VERSION_NAME} python3 server.py 2>&1"
                 serverProcess = pm.startProotProcess(command)
 
                 if (serverProcess == null) {
