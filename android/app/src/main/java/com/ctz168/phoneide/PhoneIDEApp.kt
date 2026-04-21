@@ -23,6 +23,7 @@ class PhoneIDEApp : Application() {
 
         const val PREF_NAME = "phoneide_prefs"
         const val PREF_SETUP_COMPLETE = "setup_complete"
+        const val PREF_SERVER_STOPPED_BY_USER = "server_stopped_by_user"
 
         // Version (synced with build.gradle)
         const val VERSION_NAME = "3.0.47"
@@ -130,6 +131,21 @@ class PhoneIDEApp : Application() {
     fun setSetupComplete(complete: Boolean) {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(PREF_SETUP_COMPLETE, complete).apply()
+    }
+
+    /**
+     * Track whether the user manually stopped the server.
+     * This prevents onCreate() from auto-starting the service after
+     * the Activity is recreated (e.g., by system memory pressure).
+     */
+    fun isServerStoppedByUser(): Boolean {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_SERVER_STOPPED_BY_USER, false)
+    }
+
+    fun setServerStoppedByUser(stopped: Boolean) {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_SERVER_STOPPED_BY_USER, stopped).apply()
     }
 
     /** Read and clear the persisted crash log. */

@@ -130,14 +130,22 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Start server service
-        startServerService()
+        // Start server service ONLY if user hasn't manually stopped it
+        if (!app.isServerStoppedByUser()) {
+            startServerService()
 
-        // Setup WebView
-        setupWebView()
+            // Setup WebView
+            setupWebView()
 
-        // Connect to server
-        connectToServer()
+            // Connect to server
+            connectToServer()
+        } else {
+            // User previously stopped the server - show stopped state directly
+            setupWebView()
+            updateStatusIndicator(false)
+            statusLabel.text = getString(R.string.server_status_stopped)
+            showError("服务已停止，点击 ▶ 启动按钮重新启动")
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -634,6 +642,9 @@ class MainActivity : AppCompatActivity() {
                 updateStatusIndicator(false)
                 statusLabel.text = getString(R.string.server_starting)
 
+                // Clear the "stopped by user" flag so onCreate won't skip startup
+                (application as PhoneIDEApp).setServerStoppedByUser(false)
+
                 // Start the server service
                 startServerService()
 
@@ -677,20 +688,38 @@ class MainActivity : AppCompatActivity() {
                 updateStatusIndicator(false)
                 statusLabel.text = getString(R.string.server_stopping)
 
+                // Persist that user manually stopped the server
+                // This prevents onCreate() from auto-starting it again
+                (application as PhoneIDEApp).setServerStoppedByUser(true)
+
+                // Stop status polling while stopping
+                stopStatusPolling()
+
                 // Try graceful shutdown via HTTP first
                 withContext(Dispatchers.IO) {
                     postToServer("/api/server/stop")
                 }
 
-                // Stop the Android service
+                // Stop the Android service (sends ACTION_STOP + stops service)
                 stopServerService()
 
+                // Kill any lingering python3/proot processes via ProcessManager
+                withContext(Dispatchers.IO) {
+                    try {
+                        val pm = ProcessManager(this@MainActivity)
+                        pm.runInProotSync(
+                            "killall python3 2>/dev/null; fuser -k ${PhoneIDEApp.SERVER_PORT}/tcp 2>/dev/null; true",
+                            10
+                        )
+                    } catch (_: Exception) {}
+                }
+
                 // Wait briefly for process to die
-                delay(1000)
+                delay(1500)
 
                 // Verify server is actually down
                 var attempts = 0
-                while (attempts < 10 && isActive) {
+                while (attempts < 15 && isActive) {
                     val isUp = withContext(Dispatchers.IO) {
                         checkServerConnection()
                     }
@@ -1153,6 +1182,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopServerService() {
+        val intent = Intent(this, ServerService::class.java)
+        intent.action = ServerService.ACTION_STOP
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+        // Also stop the service directly to ensure onDestroy is called
         ServerService.stop(this)
     }
 
