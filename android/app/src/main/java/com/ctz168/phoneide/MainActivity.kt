@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.Log
+import android.content.res.Configuration
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -137,6 +138,12 @@ class MainActivity : AppCompatActivity() {
 
         // Connect to server
         connectToServer()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Re-apply immersive mode flags after rotation
+        setupImmersiveMode()
     }
 
     private fun setupImmersiveMode() {

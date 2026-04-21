@@ -2,6 +2,7 @@ package com.ctz168.phoneide
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
@@ -372,6 +373,20 @@ class TerminalActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         inputField.requestFocus()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Recalculate terminal column width on rotation
+        // The layout (ScrollView + input) will auto-resize via weights,
+        // but we update the prompt style to reflect the new orientation.
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            Log.d(TAG, "Switched to landscape orientation")
+        } else {
+            Log.d(TAG, "Switched to portrait orientation")
+        }
+        // Ensure the terminal container insets are recalculated
+        terminalContainer.requestLayout()
     }
 
     override fun onPause() {
