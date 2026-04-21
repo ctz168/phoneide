@@ -168,8 +168,8 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ steps.version.outputs.version }}-build.${{ github.run_number }}
-        name: "PhoneIDE v${{ steps.version.outputs.version }}-build.${{ github.run_number }}"
+        tag_name: v${{ steps.version.outputs.version }}
+        name: "PhoneIDE v${{ steps.version.outputs.version }}"
         body: |
           ## PhoneIDE v${{ steps.version.outputs.version }}
 
@@ -178,8 +178,7 @@ jobs:
           ### Changes
           - APK commit: `${{ github.sha }}`
           - IDE commit: `${{ steps.clone_ide.outputs.ide_commit || 'main' }}`
-          - Build: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          - Run: #${{ github.run_number }}
+          - Build time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
           ### Features
           - Code editor with syntax highlighting (CodeMirror)
