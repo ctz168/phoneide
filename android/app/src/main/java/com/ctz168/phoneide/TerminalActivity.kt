@@ -226,7 +226,13 @@ class TerminalActivity : AppCompatActivity() {
         if (command.isNotEmpty()) {
             commandHistory.add(command)
             historyIndex = commandHistory.size
+
+            // Echo the command to output so user can see what was typed
+            appendOutput("${inputPrompt.text}${command}\n")
         }
+
+        // Return focus to input field for next command
+        inputField.requestFocus()
 
         scope.launch {
             try {

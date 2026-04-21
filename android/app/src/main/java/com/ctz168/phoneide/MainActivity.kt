@@ -754,7 +754,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ========================
-    // Update Button Handler (git pull code update)
+    // Update Button Handler (check GitHub Releases for APK update)
     // ========================
 
     @SuppressLint("SetTextI18n")
@@ -765,92 +765,78 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         this@MainActivity,
-                        "正在检查代码更新...",
+                        "正在检查APK更新...",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
 
-                // POST to /api/update/check
-                val responseBody = withContext(Dispatchers.IO) {
+                // Query GitHub Releases API for ctz168/phoneide
+                val releaseInfo = withContext(Dispatchers.IO) {
                     try {
                         val request = Request.Builder()
-                            .url("${PhoneIDEApp.SERVER_URL}/api/update/check")
-                            .post(RequestBody.create(null, byteArrayOf()))
+                            .url("https://api.github.com/repos/ctz168/phoneide/releases/latest")
+                            .header("Accept", "application/vnd.github+json")
                             .build()
                         val response = updateHttpClient.newCall(request).execute()
                         val body = response.body?.string()
                         response.close()
-                        body
+                        if (!body.isNullOrEmpty()) {
+                            parseReleaseResponse(body)
+                        } else {
+                            null
+                        }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Update check failed", e)
+                        Log.e(TAG, "Release check failed", e)
                         null
                     }
                 }
 
-                if (responseBody == null) {
+                if (releaseInfo == null) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "无法检查更新，请检查网络", Toast.LENGTH_SHORT).show()
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle("检查更新失败")
+                            .setMessage("无法连接 GitHub API，请检查网络后重试。\n\n提示：需要能访问 api.github.com")
+                            .setPositiveButton("确定", null)
+                            .show()
                     }
                     return@launch
                 }
 
-                val json = JSONObject(responseBody)
-                val errorMsg = json.optString("error", "")
-                val errorType = json.optString("error_type", "")
-                val errorHint = json.optString("message", "")
-                val updateAvailable = json.optBoolean("update_available", false)
-                val codeUpdate = json.optBoolean("code_update", false)
-                val currentVersion = json.optString("current_version", "unknown")
-                val localSha = json.optString("local_sha", "?")
-                val remoteSha = json.optString("remote_sha", "?")
-                val remoteMessage = json.optString("remote_message", "")
-                val remoteAuthor = json.optString("remote_author", "")
-                val remoteDate = json.optString("remote_date", "")
-                val commitsBehind = json.optInt("commits_behind", 0)
+                val latestVersion = releaseInfo.first
+                val releaseBody = releaseInfo.second
+                val apkUrl = releaseInfo.third
 
-                // If the server returned an error (e.g. network issue reaching GitHub),
-                // show the actual error details instead of silently claiming "up to date".
-                if (errorMsg.isNotEmpty() && !updateAvailable) {
-                    val hint = if (errorHint.isNotEmpty()) "\n\n$errorHint" else ""
-                    val detail = if (errorType == "network") {
-                        "GitHub API 连接失败\n${errorMsg}$hint\n\n可能原因：\n" +
-                        "• 手机网络不稳定\n" +
-                        "• GitHub 在当前网络被限制\n" +
-                        "• DNS 解析失败（proot 环境常见）"
-                    } else {
-                        "更新检查出错\n${errorMsg}"
-                    }
+                if (apkUrl == null) {
+                    // No APK in the release
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("检查更新失败")
-                        .setMessage(detail)
+                        .setTitle("没有可用的更新")
+                        .setMessage("最新版本: $latestVersion\n但该版本未包含 APK 安装包。")
                         .setPositiveButton("确定", null)
                         .show()
                     return@launch
                 }
 
-                if (!updateAvailable || !codeUpdate) {
+                // Compare versions: check if latest is newer than current
+                if (!isNewerVersion(latestVersion, PhoneIDEApp.VERSION_NAME)) {
                     MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle("代码已是最新")
-                        .setMessage("当前版本: $currentVersion\n本地 commit: $localSha")
+                        .setTitle("已是最新版本")
+                        .setMessage("当前版本: v${PhoneIDEApp.VERSION_NAME}\n最新版本: $latestVersion")
                         .setPositiveButton("确定", null)
                         .show()
                     return@launch
                 }
 
-                // Show code update info and confirm
-                val behindText = if (commitsBehind > 0) "落后 $commitsBehind 个提交" else "有新的提交"
+                // Show update dialog
                 MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle("发现代码更新")
+                    .setTitle("发现新版本 $latestVersion")
                     .setMessage(
-                        "当前版本: $currentVersion\n" +
-                        "$behindText\n\n" +
-                        "远程最新:\n$remoteMessage\n" +
-                        "作者: $remoteAuthor\n" +
-                        (if (remoteDate.isNotEmpty()) "时间: $remoteDate" else "") +
-                        "\n\n点击更新将执行 git pull 并重启服务器"
+                        "当前版本: v${PhoneIDEApp.VERSION_NAME}\n" +
+                        "最新版本: $latestVersion\n\n" +
+                        "${releaseBody.take(500)}\n\n" +
+                        "点击「立即更新」下载并安装新版本 APK。"
                     )
                     .setPositiveButton("立即更新") { _, _ ->
-                        applyCodeUpdate(currentVersion)
+                        downloadAndInstallApk(apkUrl, latestVersion)
                     }
                     .setNegativeButton("稍后", null)
                     .show()
@@ -864,6 +850,72 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /**
+     * Parse GitHub release JSON response.
+     * Returns Triple(releaseTag, bodyText, apkDownloadUrl?) or null.
+     */
+    private fun parseReleaseResponse(jsonStr: String): Triple<String, String, String?>? {
+        return try {
+            val json = JSONObject(jsonStr)
+            val tagName = json.optString("tag_name", "")
+            val body = json.optString("body", "")
+            val assets = json.getJSONArray("assets")
+
+            // Find the release APK (prefer release APK over debug)
+            var apkUrl: String? = null
+            for (i in 0 until assets.length()) {
+                val asset = assets.getJSONObject(i)
+                val name = asset.optString("name", "")
+                val url = asset.optString("browser_download_url", "")
+                if (name.contains("release", ignoreCase = true) && name.endsWith(".apk")) {
+                    apkUrl = url
+                    break
+                }
+            }
+            // Fallback to any APK if no "release" APK found
+            if (apkUrl == null) {
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    val url = asset.optString("browser_download_url", "")
+                    if (url.endsWith(".apk")) {
+                        apkUrl = url
+                        break
+                    }
+                }
+            }
+
+            Triple(tagName, body, apkUrl)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse release JSON", e)
+            null
+        }
+    }
+
+    /**
+     * Compare two version strings (e.g. "3.0.43" vs "3.0.44").
+     * Returns true if remoteVersion is strictly newer than localVersion.
+     */
+    private fun isNewerVersion(remoteVersion: String, localVersion: String): Boolean {
+        // Strip "v" prefix and "-build.XXX" suffix if present
+        fun normalize(v: String): String {
+            return v.removePrefix("v").split("-").firstOrNull() ?: v
+        }
+        val rv = normalize(remoteVersion).split(".").map { it.toIntOrNull() ?: 0 }
+        val lv = normalize(localVersion).split(".").map { it.toIntOrNull() ?: 0 }
+        val maxLen = maxOf(rv.size, lv.size)
+        for (i in 0 until maxLen) {
+            val r = rv.getOrElse(i) { 0 }
+            val l = lv.getOrElse(i) { 0 }
+            if (r > l) return true
+            if (r < l) return false
+        }
+        return false
+    }
+
+    // ========================
+    // Code Update via Server (git pull) — kept for internal use
+    // ========================
 
     @SuppressLint("SetTextI18n")
     private fun applyCodeUpdate(version: String) {
