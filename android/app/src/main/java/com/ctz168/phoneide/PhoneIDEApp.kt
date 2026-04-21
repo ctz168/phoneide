@@ -24,6 +24,7 @@ class PhoneIDEApp : Application() {
         const val PREF_NAME = "phoneide_prefs"
         const val PREF_SETUP_COMPLETE = "setup_complete"
         const val PREF_SERVER_STOPPED_BY_USER = "server_stopped_by_user"
+        const val PREF_BATTERY_OPT_ASKED = "battery_opt_asked"
 
         // Version (synced with build.gradle)
         const val VERSION_NAME = "3.0.47"
@@ -146,6 +147,16 @@ class PhoneIDEApp : Application() {
     fun setServerStoppedByUser(stopped: Boolean) {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(PREF_SERVER_STOPPED_BY_USER, stopped).apply()
+    }
+
+    fun isBatteryOptAsked(): Boolean {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_BATTERY_OPT_ASKED, false)
+    }
+
+    fun setBatteryOptAsked(asked: Boolean) {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_BATTERY_OPT_ASKED, asked).apply()
     }
 
     /** Read and clear the persisted crash log. */

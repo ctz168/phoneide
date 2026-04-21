@@ -1220,7 +1220,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Request battery optimization exemption (critical for background service survival)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // Only ask ONCE — not on every Activity recreation (e.g. after minimize/restore)
+        val app2 = application as PhoneIDEApp
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !app2.isBatteryOptAsked()) {
+            app2.setBatteryOptAsked(true)
             try {
                 val intent = Intent()
                 intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
