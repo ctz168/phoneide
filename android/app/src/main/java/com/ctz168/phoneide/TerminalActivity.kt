@@ -151,12 +151,12 @@ class TerminalActivity : AppCompatActivity() {
             "CTRL" to { toggleCtrl() },
             "ALT" to { toggleAlt() },
             "TAB" to { sendRawKey("\t") },
-            "←" to { sendArrowKey("D") },
-            "↑" to { sendArrowKey("A") },
-            "↓" to { sendArrowKey("B") },
-            "→" to { sendArrowKey("C") },
-            "HOME" to { sendRawKey("\u001b[H") },
-            "END" to { sendRawKey("\u001b[F") }
+            "←" to { moveCursorLeft() },
+            "↑" to { navigateHistory(-1) },
+            "↓" to { navigateHistory(1) },
+            "→" to { moveCursorRight() },
+            "HOME" to { moveCursorHome() },
+            "END" to { moveCursorEnd() }
         )
 
         extraKeys.forEach { (label, action) ->
@@ -440,22 +440,29 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
-    private fun sendArrowKey(direction: String) {
-        // ANSI arrow key sequences: ESC [ A/B/C/D
-        var sequence = "\u001b["
-        
-        if (ctrlPressed) {
-            sequence += "5"  // Ctrl+arrow is ESC[5A/B/C/D
-        } else if (altPressed) {
-            sequence += "3"  // Alt+arrow is ESC[3A/B/C/D
-        } else if (shiftPressed) {
-            sequence += "2"  // Shift+arrow is ESC[2A/B/C/D
+    // Cursor movement functions (local input field)
+    private fun moveCursorLeft() {
+        val pos = inputField.selectionStart
+        if (pos > 0) {
+            inputField.setSelection(pos - 1)
         }
-        
-        sequence += direction
-        
-        sendRawKey(sequence)
-        resetModifiers()
+    }
+
+    private fun moveCursorRight() {
+        val pos = inputField.selectionStart
+        val len = inputField.text?.length ?: 0
+        if (pos < len) {
+            inputField.setSelection(pos + 1)
+        }
+    }
+
+    private fun moveCursorHome() {
+        inputField.setSelection(0)
+    }
+
+    private fun moveCursorEnd() {
+        val len = inputField.text?.length ?: 0
+        inputField.setSelection(len)
     }
 
     private fun toggleCtrl() {
@@ -476,7 +483,7 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun updateModifierButtonStates() {
-        // Update CTRL button appearance
+        // Update CTRL button appearance (index 1 in extraKeysBar)
         val ctrlBtn = extraKeysBar.getChildAt(1) as? TextView
         ctrlBtn?.let {
             if (ctrlPressed) {
@@ -488,7 +495,7 @@ class TerminalActivity : AppCompatActivity() {
             }
         }
 
-        // Update ALT button appearance
+        // Update ALT button appearance (index 2 in extraKeysBar)
         val altBtn = extraKeysBar.getChildAt(2) as? TextView
         altBtn?.let {
             if (altPressed) {
