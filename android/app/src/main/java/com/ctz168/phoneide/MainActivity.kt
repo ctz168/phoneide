@@ -29,6 +29,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -81,9 +82,11 @@ class MainActivity : AppCompatActivity() {
     // Server management bar views
     private lateinit var statusIndicator: View
     private lateinit var statusLabel: TextView
-    private lateinit var btnStart: View
-    private lateinit var btnStop: View
+    private lateinit var btnToggle: View
+    private lateinit var toggleIcon: ImageView
+    private lateinit var toggleLabel: TextView
     private lateinit var btnUpdate: View
+    private var isServerRunning = false
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var statusPollJob: Job? = null
@@ -188,15 +191,15 @@ class MainActivity : AppCompatActivity() {
         // Server management bar views
         statusIndicator = findViewById(R.id.status_indicator)
         statusLabel = findViewById(R.id.status_label)
-        btnStart = findViewById(R.id.btn_start)
-        btnStop = findViewById(R.id.btn_stop)
+        btnToggle = findViewById(R.id.btn_toggle)
+        toggleIcon = findViewById(R.id.toggle_icon)
+        toggleLabel = findViewById(R.id.toggle_label)
         btnUpdate = findViewById(R.id.btn_update)
 
         retryButton.setOnClickListener { connectToServer() }
 
         // Server management button handlers
-        btnStart.setOnClickListener { handleStart() }
-        btnStop.setOnClickListener { handleStop() }
+        btnToggle.setOnClickListener { handleToggle() }
         btnUpdate.setOnClickListener { handleCodeUpdate() }
 
         // Terminal button
@@ -615,6 +618,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetTextI18n")
     private fun updateStatusIndicator(isRunning: Boolean) {
+        isServerRunning = isRunning
         val drawable = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             if (isRunning) {
@@ -627,9 +631,27 @@ class MainActivity : AppCompatActivity() {
         if (isRunning) {
             statusLabel.text = getString(R.string.server_status_running)
             statusLabel.setTextColor(Color.parseColor("#A8C49A"))
+            // Update toggle button to show "Stop"
+            toggleIcon.setImageResource(android.R.drawable.ic_media_pause)
+            toggleLabel.text = getString(R.string.btn_stop)
         } else {
             statusLabel.text = getString(R.string.server_status_stopped)
             statusLabel.setTextColor(Color.parseColor("#D46A6A"))
+            // Update toggle button to show "Start"
+            toggleIcon.setImageResource(android.R.drawable.ic_media_play)
+            toggleLabel.text = getString(R.string.btn_start)
+        }
+    }
+
+    // ========================
+    // Toggle Button Handler
+    // ========================
+
+    private fun handleToggle() {
+        if (isServerRunning) {
+            handleStop()
+        } else {
+            handleStart()
         }
     }
 
@@ -638,7 +660,7 @@ class MainActivity : AppCompatActivity() {
     // ========================
 
     private fun handleStart() {
-        btnStart.isEnabled = false
+        btnToggle.isEnabled = false
         scope.launch {
             try {
                 updateStatusIndicator(false)
@@ -674,7 +696,7 @@ class MainActivity : AppCompatActivity() {
                 updateStatusIndicator(false)
                 Toast.makeText(this@MainActivity, "启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
-                btnStart.isEnabled = true
+                btnToggle.isEnabled = true
             }
         }
     }
@@ -684,7 +706,7 @@ class MainActivity : AppCompatActivity() {
     // ========================
 
     private fun handleStop() {
-        btnStop.isEnabled = false
+        btnToggle.isEnabled = false
         scope.launch {
             try {
                 updateStatusIndicator(false)
@@ -741,7 +763,7 @@ class MainActivity : AppCompatActivity() {
                 updateStatusIndicator(false)
                 statusLabel.text = getString(R.string.server_status_stopped)
             } finally {
-                btnStop.isEnabled = true
+                btnToggle.isEnabled = true
             }
         }
     }

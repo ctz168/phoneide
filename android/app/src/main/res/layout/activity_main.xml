@@ -143,9 +143,9 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Start Button -->
+        <!-- Toggle Button (Start/Stop) -->
         <LinearLayout
-            android:id="@+id/btn_start"
+            android:id="@+id/btn_toggle"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
@@ -157,42 +157,17 @@
             android:padding="4dp">
 
             <ImageView
+                android:id="@+id/toggle_icon"
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:contentDescription="@string/btn_start"
                 android:src="@android:drawable/ic_media_play" />
 
             <TextView
+                android:id="@+id/toggle_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/btn_start"
-                android:textColor="#F5F0EB"
-                android:textSize="9sp" />
-        </LinearLayout>
-
-        <!-- Stop Button -->
-        <LinearLayout
-            android:id="@+id/btn_stop"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="4dp">
-
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:contentDescription="@string/btn_stop"
-                android:src="@android:drawable/ic_media_pause" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_stop"
                 android:textColor="#F5F0EB"
                 android:textSize="9sp" />
         </LinearLayout>
