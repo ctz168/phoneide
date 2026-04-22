@@ -39,12 +39,18 @@ class TerminalActivity : AppCompatActivity() {
     private lateinit var terminalContainer: FrameLayout
     private lateinit var outputScrollView: ScrollView
     private lateinit var outputView: TextView
+    private lateinit var extraKeysBar: LinearLayout
     private lateinit var inputLine: LinearLayout
     private lateinit var inputPrompt: TextView
     private lateinit var inputField: EditText
     private lateinit var btnClose: View
     private lateinit var btnFontSizeUp: View
     private lateinit var btnFontSizeDown: View
+
+    // Modifier key states
+    private var ctrlPressed = false
+    private var altPressed = false
+    private var shiftPressed = false
 
     private var currentFontSize = 13
     private var sessionProcess: Process? = null
@@ -126,6 +132,55 @@ class TerminalActivity : AppCompatActivity() {
         }
         outputScrollView.addView(outputView)
         baseLayout.addView(outputScrollView)
+
+        // Extra keys bar (Ctrl, Alt, Shift, arrows, etc.)
+        extraKeysBar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.parseColor("#1E1C18"))
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(4, 4, 4, 4)
+        }
+
+        // Create extra key buttons
+        val extraKeys = listOf(
+            "ESC" to { sendRawKey("\u001b") },
+            "CTRL" to { toggleCtrl() },
+            "ALT" to { toggleAlt() },
+            "TAB" to { sendRawKey("\t") },
+            "←" to { sendArrowKey("D") },
+            "↑" to { sendArrowKey("A") },
+            "↓" to { sendArrowKey("B") },
+            "→" to { sendArrowKey("C") },
+            "HOME" to { sendRawKey("\u001b[H") },
+            "END" to { sendRawKey("\u001b[F") }
+        )
+
+        extraKeys.forEach { (label, action) ->
+            val btn = TextView(context).apply {
+                text = label
+                setTextColor(Color.parseColor("#F5F0EB"))
+                setBackgroundColor(Color.parseColor("#353230"))
+                typeface = Typeface.MONOSPACE
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setPadding(8, 6, 8, 6)
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ).apply {
+                    marginStart = 2
+                    marginEnd = 2
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { action() }
+            }
+            extraKeysBar.addView(btn)
+        }
+        baseLayout.addView(extraKeysBar)
 
         // Input area at bottom
         inputLine = LinearLayout(context).apply {
@@ -368,6 +423,82 @@ class TerminalActivity : AppCompatActivity() {
         outputView.textSize = currentFontSize.toFloat()
         inputPrompt.textSize = currentFontSize.toFloat()
         inputField.textSize = currentFontSize.toFloat()
+    }
+
+    // ========================
+    // Extra Keys Functions
+    // ========================
+
+    private fun sendRawKey(key: String) {
+        scope.launch {
+            try {
+                writer?.write(key)
+                writer?.flush()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send key", e)
+            }
+        }
+    }
+
+    private fun sendArrowKey(direction: String) {
+        // ANSI arrow key sequences: ESC [ A/B/C/D
+        var sequence = "\u001b["
+        
+        if (ctrlPressed) {
+            sequence += "5"  // Ctrl+arrow is ESC[5A/B/C/D
+        } else if (altPressed) {
+            sequence += "3"  // Alt+arrow is ESC[3A/B/C/D
+        } else if (shiftPressed) {
+            sequence += "2"  // Shift+arrow is ESC[2A/B/C/D
+        }
+        
+        sequence += direction
+        
+        sendRawKey(sequence)
+        resetModifiers()
+    }
+
+    private fun toggleCtrl() {
+        ctrlPressed = !ctrlPressed
+        updateModifierButtonStates()
+    }
+
+    private fun toggleAlt() {
+        altPressed = !altPressed
+        updateModifierButtonStates()
+    }
+
+    private fun resetModifiers() {
+        ctrlPressed = false
+        altPressed = false
+        shiftPressed = false
+        updateModifierButtonStates()
+    }
+
+    private fun updateModifierButtonStates() {
+        // Update CTRL button appearance
+        val ctrlBtn = extraKeysBar.getChildAt(1) as? TextView
+        ctrlBtn?.let {
+            if (ctrlPressed) {
+                it.setBackgroundColor(Color.parseColor("#C4A97D"))
+                it.setTextColor(Color.parseColor("#1A1814"))
+            } else {
+                it.setBackgroundColor(Color.parseColor("#353230"))
+                it.setTextColor(Color.parseColor("#F5F0EB"))
+            }
+        }
+
+        // Update ALT button appearance
+        val altBtn = extraKeysBar.getChildAt(2) as? TextView
+        altBtn?.let {
+            if (altPressed) {
+                it.setBackgroundColor(Color.parseColor("#C4A97D"))
+                it.setTextColor(Color.parseColor("#1A1814"))
+            } else {
+                it.setBackgroundColor(Color.parseColor("#353230"))
+                it.setTextColor(Color.parseColor("#F5F0EB"))
+            }
+        }
     }
 
     override fun onResume() {
