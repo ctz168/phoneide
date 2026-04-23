@@ -29,6 +29,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.ValueCallback
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -259,6 +260,29 @@ class MainActivity : AppCompatActivity() {
                     showError("加载失败: ${error?.description}")
                 }
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                // Inject JavaScript to override window.open for OAuth support
+                // This redirects window.open calls to our AndroidBridge.openExternal
+                view?.evaluateJavascript("""
+                    (function() {
+                        if (window.__phoneide_window_open_overridden) return;
+                        window.__phoneide_window_open_overridden = true;
+                        var originalOpen = window.open;
+                        window.open = function(url, target, features) {
+                            // If running in Android APK, use native bridge to open external browser
+                            if (window.AndroidBridge && typeof window.AndroidBridge.openExternal === 'function') {
+                                window.AndroidBridge.openExternal(url);
+                                // Return a fake window object to avoid errors
+                                return { closed: false, close: function() { this.closed = true; } };
+                            }
+                            // Fallback to original window.open
+                            return originalOpen.call(window, url, target, features);
+                        };
+                    })();
+                """.trimIndent(), null)
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -270,7 +294,37 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 // Could update progress bar here
             }
+
+            // Handle window.open() calls from JavaScript (used for OAuth)
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                // Get the URL that triggered window.open()
+                val href = view?.hitTestResult?.extra
+                if (!href.isNullOrEmpty()) {
+                    Log.d(TAG, "window.open() intercepted: $href")
+                    // Open external URLs in browser
+                    if (!href.startsWith(PhoneIDEApp.SERVER_URL) &&
+                        !href.startsWith("http://localhost") &&
+                        !href.startsWith("http://127.0.0.1")) {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href)))
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Cannot open URL: $href", e)
+                        }
+                        return true
+                    }
+                }
+                // Return false to let WebView handle it (will likely fail, but that's okay)
+                return false
+            }
         }
+
+        // Enable support for opening new windows (needed for OAuth popup)
+        webView.settings.setSupportMultipleWindows(true)
 
         // Add JavascriptInterface for native bridge
         webView.addJavascriptInterface(NativeBridge(), "AndroidBridge")
@@ -309,6 +363,25 @@ class MainActivity : AppCompatActivity() {
             scope.launch {
                 withContext(Dispatchers.Main) {
                     showIdeNotification(title, message, type, durationMs)
+                }
+            }
+        }
+
+        /**
+         * Open a URL in external browser (for OAuth, etc.)
+         * Called by injected window.open override.
+         */
+        @JavascriptInterface
+        fun openExternal(url: String) {
+            Log.d(TAG, "openExternal: $url")
+            scope.launch {
+                withContext(Dispatchers.Main) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Cannot open external URL: $url", e)
+                        Toast.makeText(this@MainActivity, "无法打开链接: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
