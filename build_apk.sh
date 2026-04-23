@@ -32,7 +32,7 @@ echo ""
 # Step 3: Copy IDE files to Android assets
 echo "[3/4] Copying IDE files to assets..."
 mkdir -p "$ANDROID_DIR/app/src/main/assets/ide"
-cp "$IDE_TMP_DIR/server.py" "$ANDROID_DIR/app/src/main/assets/ide/"
+cp "$IDE_TMP_DIR/phoneide_server.py" "$ANDROID_DIR/app/src/main/assets/ide/"
 cp "$IDE_TMP_DIR/utils.py" "$ANDROID_DIR/app/src/main/assets/ide/"
 cp "$IDE_TMP_DIR/requirements.txt" "$ANDROID_DIR/app/src/main/assets/ide/"
 cp -r "$IDE_TMP_DIR/routes" "$ANDROID_DIR/app/src/main/assets/ide/"

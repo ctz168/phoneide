@@ -139,7 +139,7 @@ class SetupActivity : AppCompatActivity() {
 
                 val checkResult = try {
                     processManager.runInProotSync(
-                        "ls /root/phoneide/server.py 2>/dev/null && echo EXISTS",
+                        "ls /root/phoneide/phoneide_server.py 2>/dev/null && echo EXISTS",
                         15
                     )
                 } catch (e: Exception) { e.message ?: "" }

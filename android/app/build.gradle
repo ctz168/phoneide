@@ -22,8 +22,8 @@ android {
         applicationId = "com.ctz168.phoneide"
         minSdk = 29
         targetSdk = 36
-        versionCode = 30107
-        versionName = "3.1.7"
+        versionCode = 30108
+        versionName = "3.1.8"
     }
 
     compileOptions {
@@ -69,7 +69,7 @@ android {
     }
 }
 
-// IDE files (server.py + routes/ + static/) are fetched from ctz168/ide during CI.
+// IDE files (phoneide_server.py + routes/ + static/) are fetched from ctz168/ide during CI.
 // The CI workflow clones ctz168/ide and copies files into android/app/src/main/assets/ide/
 // before Gradle runs. No sync task needed here.
 

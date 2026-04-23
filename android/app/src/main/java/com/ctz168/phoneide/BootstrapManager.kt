@@ -81,7 +81,7 @@ class BootstrapManager(
     fun isBootstrapComplete(): Boolean {
         return File("$rootfsDir/bin/bash").exists() &&
                File("$rootfsDir/usr/bin/python3").exists() &&
-               File("$rootfsDir/root/phoneide/server.py").exists()
+               File("$rootfsDir/root/phoneide/phoneide_server.py").exists()
     }
 
     fun readRootfsFile(path: String): String? {

@@ -540,7 +540,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // If we get here, server didn't respond
-            showError("无法连接到服务器。请检查 PhoneIDE 服务是否正在运行。\n\n提示：可以在终端中手动运行:\ncd ~/phoneide && python3 server.py")
+            showError("无法连接到服务器。请检查 PhoneIDE 服务是否正在运行。\n\n提示：可以在终端中手动运行:\ncd ~/phoneide && python3 phoneide_server.py")
         }
     }
 

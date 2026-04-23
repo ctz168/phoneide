@@ -88,7 +88,7 @@ jobs:
       run: |
         mkdir -p android/app/src/main/assets/ide
         # Core Python backend
-        cp /tmp/ide/server.py android/app/src/main/assets/ide/
+        cp /tmp/ide/phoneide_server.py android/app/src/main/assets/ide/
         cp /tmp/ide/utils.py android/app/src/main/assets/ide/
         cp /tmp/ide/requirements.txt android/app/src/main/assets/ide/
         # Routes (blueprint modules)
@@ -107,7 +107,7 @@ jobs:
         find android/app/src/main/assets/ide -type f | wc -l
         echo "files packaged"
         # Verify critical files exist
-        for f in server.py utils.py routes/__init__.py static/index.html; do
+        for f in phoneide_server.py utils.py routes/__init__.py static/index.html; do
           if [ ! -f "android/app/src/main/assets/ide/$f" ]; then
             echo "ERROR: Missing critical file: $f"
             exit 1
