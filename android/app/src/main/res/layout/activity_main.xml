@@ -199,6 +199,33 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
+        <!-- Reinstall Button -->
+        <LinearLayout
+            android:id="@+id/btn_reinstall"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/btn_reinstall"
+                android:src="@android:drawable/ic_menu_rotate" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_reinstall"
+                android:textColor="#F5F0EB"
+                android:textSize="9sp" />
+        </LinearLayout>
+
     </LinearLayout>
 
 </RelativeLayout>

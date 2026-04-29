@@ -615,6 +615,184 @@ class BootstrapManager(
 
     fun writeResolvConf() { ensureResolvConf() }
 
+    // ================================================================
+    // Reinstall Methods (for partial reinstall from MainActivity)
+    // ================================================================
+
+    /**
+     * Reinstall proot binaries - copy from APK jniLibs to filesDir/lib
+     */
+    fun reinstallProot(): Boolean {
+        return try {
+            reportProgress(10, "正在重装 proot...")
+            setupDirectories()
+
+            // Force re-copy proot binaries from current ABI's nativeLibDir
+            // nativeLibDir points to the correct ABI folder (e.g., /data/app/.../lib/arm64)
+            val nativeLibs = File(nativeLibDir)
+            if (nativeLibs.exists() && nativeLibs.isDirectory) {
+                nativeLibs.listFiles()?.forEach { srcFile ->
+                    if (srcFile.name.endsWith(".so")) {
+                        val targetFile = File(libDir, srcFile.name)
+                        srcFile.copyTo(targetFile, overwrite = true)
+                        targetFile.setExecutable(true, false)
+                        targetFile.setReadable(true, false)
+                        Log.d(TAG, "Copied: ${srcFile.name}")
+                    }
+                }
+            }
+
+            // Also setup libtalloc (overwrite if exists)
+            val tallocSource = File("$nativeLibDir/libtalloc.so")
+            if (tallocSource.exists()) {
+                val tallocTarget = File("$libDir/libtalloc.so.2")
+                tallocSource.copyTo(tallocTarget, overwrite = true)
+                tallocTarget.setExecutable(true)
+            }
+
+            // Setup fake sysdata and resolv.conf
+            setupFakeSysdata()
+            ensureResolvConf()
+
+            reportProgress(100, "proot 重装完成")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Reinstall proot failed", e)
+            reportProgress(-1, "proot 重装失败: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Reinstall Ubuntu rootfs - delete existing and re-download/extract
+     */
+    fun reinstallUbuntu(): Boolean {
+        if (isRunning.getAndSet(true)) {
+            reportProgress(-1, "其他操作正在进行中")
+            return false
+        }
+
+        return try {
+            reportProgress(0, "正在删除旧 rootfs...")
+            val rootfs = File(rootfsDir)
+            if (rootfs.exists()) {
+                deleteRecursively(rootfs)
+            }
+            rootfs.mkdirs()
+
+            reportProgress(10, "正在下载 Ubuntu 24.04 rootfs...")
+            val tarFile = File("$tmpDir/ubuntu-rootfs.tar.gz")
+            if (!downloadRootfs(tarFile)) {
+                reportProgress(-1, "下载 rootfs 失败")
+                isRunning.set(false)
+                return false
+            }
+
+            reportProgress(50, "正在解压 rootfs...")
+            extractRootfs(tarFile.absolutePath)
+            tarFile.delete()
+
+            reportProgress(80, "正在配置 rootfs...")
+            configureRootfs()
+
+            reportProgress(90, "正在安装依赖...")
+            installDependencies()
+
+            reportProgress(100, "Ubuntu 重装完成")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Reinstall Ubuntu failed", e)
+            reportProgress(-1, "Ubuntu 重装失败: ${e.message}")
+            false
+        } finally {
+            isRunning.set(false)
+        }
+    }
+
+    /**
+     * Reinstall IDE code - delete existing, clone fresh from ctz168/ide, setup venv
+     */
+    fun reinstallIDE(context: Context): Boolean {
+        return try {
+            reportProgress(0, "正在删除旧 IDE 代码...")
+
+            // Delete existing IDE files in rootfs
+            val rootIdeDir = File("$rootfsDir/root/phoneide")
+            if (rootIdeDir.exists()) {
+                deleteRecursively(rootIdeDir)
+            }
+            rootIdeDir.mkdirs()
+
+            // Also clear host IDE dir to force fresh copy from assets
+            val hostDir = File(hostIdeDir)
+            if (hostDir.exists()) {
+                deleteRecursively(hostDir)
+            }
+            hostDir.mkdirs()
+
+            reportProgress(20, "正在从 assets 复制 IDE 文件...")
+            // Copy IDE files from assets
+            copyIDEFromAssets(context, hostDir)
+
+            reportProgress(40, "正在复制 IDE 到 rootfs...")
+            copyDirectory(hostDir, rootIdeDir)
+
+            reportProgress(60, "正在创建 Python 虚拟环境...")
+            val pm = ProcessManager(filesDir, nativeLibDir)
+            pm.initialize()
+
+            // Create virtual environment and install dependencies
+            val venvResult = pm.runInProotSync(
+                "cd /root/phoneide && python3 -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt 2>&1 || true",
+                300
+            )
+            Log.d(TAG, "venv result: ${venvResult.takeLast(500)}")
+
+            reportProgress(80, "正在安装 Flask...")
+            // Ensure Flask is installed (fallback if requirements.txt failed)
+            pm.runInProotSync(
+                "pip3 install --break-system-packages flask flask-cors 2>&1 || pip3 install flask flask-cors 2>&1 || true",
+                120
+            )
+
+            reportProgress(100, "IDE 代码重装完成")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Reinstall IDE failed", e)
+            reportProgress(-1, "IDE 重装失败: ${e.message}")
+            false
+        }
+    }
+
+    private fun copyIDEFromAssets(context: Context, destDir: File) {
+        val assetManager = context.assets
+        copyAssetDirRecursive("ide", destDir, assetManager)
+    }
+
+    private fun copyAssetDirRecursive(assetPath: String, destDir: File, assetManager: android.content.res.AssetManager) {
+        val files = assetManager.list(assetPath) ?: return
+        for (file in files) {
+            val srcPath = "$assetPath/$file"
+            val destFile = File(destDir, file)
+            try {
+                val inputStream = assetManager.open(srcPath)
+                java.io.FileOutputStream(destFile).use { out ->
+                    inputStream.use { inp ->
+                        val buf = ByteArray(8192)
+                        var n: Int
+                        while (inp.read(buf).also { n = it } != -1) {
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Likely a directory — recurse
+                destFile.mkdirs()
+                copyAssetDirRecursive(srcPath, destFile, assetManager)
+            }
+        }
+    }
+
     private fun deleteRecursively(file: File) {
         try {
             if (!file.canonicalPath.startsWith(filesDir)) return

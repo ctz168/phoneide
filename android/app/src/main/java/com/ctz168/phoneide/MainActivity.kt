@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggleIcon: ImageView
     private lateinit var toggleLabel: TextView
     private lateinit var btnUpdate: View
+    private lateinit var btnReinstall: View
     private var isServerRunning = false
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -196,12 +197,14 @@ class MainActivity : AppCompatActivity() {
         toggleIcon = findViewById(R.id.toggle_icon)
         toggleLabel = findViewById(R.id.toggle_label)
         btnUpdate = findViewById(R.id.btn_update)
+        btnReinstall = findViewById(R.id.btn_reinstall)
 
         retryButton.setOnClickListener { connectToServer() }
 
         // Server management button handlers
         btnToggle.setOnClickListener { handleToggle() }
         btnUpdate.setOnClickListener { handleCodeUpdate() }
+        btnReinstall.setOnClickListener { showReinstallDialog() }
 
         // Terminal button
         val btnTerminal = findViewById<View>(R.id.btn_terminal)
@@ -1345,6 +1348,136 @@ class MainActivity : AppCompatActivity() {
         scope.cancel()
         webView.destroy()
         super.onDestroy()
+    }
+
+    // ========================
+    // Reinstall Dialog
+    // ========================
+
+    @SuppressLint("SetTextI18n")
+    private fun showReinstallDialog() {
+        val options = arrayOf(
+            getString(R.string.reinstall_proot),
+            getString(R.string.reinstall_ubuntu),
+            getString(R.string.reinstall_ide)
+        )
+        val descriptions = arrayOf(
+            getString(R.string.reinstall_proot_desc),
+            getString(R.string.reinstall_ubuntu_desc),
+            getString(R.string.reinstall_ide_desc)
+        )
+
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.reinstall_title))
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> executeReinstall("proot") { bm -> bm.reinstallProot() }
+                    1 -> executeReinstall("ubuntu") { bm -> bm.reinstallUbuntu() }
+                    2 -> executeReinstall("ide") { bm -> bm.reinstallIDE(this) }
+                }
+            }
+            .setNegativeButton("取消", null)
+
+        // Custom adapter to show descriptions
+        val dialog = builder.create()
+        dialog.listView.adapter = object : android.widget.ArrayAdapter<String>(
+            this,
+            android.R.layout.simple_list_item_2,
+            android.R.id.text1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val view = super.getView(position, convertView, parent)
+                val text1 = view.findViewById<TextView>(android.R.id.text1)
+                val text2 = view.findViewById<TextView>(android.R.id.text2)
+                text1.text = options[position]
+                text2.text = descriptions[position]
+                text2.textSize = 11f
+                text2.setTextColor(Color.parseColor("#888888"))
+                view.setPadding(32, 16, 32, 16)
+                return view
+            }
+        }
+        dialog.show()
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun executeReinstall(type: String, action: (BootstrapManager) -> Boolean) {
+        // Stop server first
+        stopServerService()
+
+        val progressDialog = AlertDialog.Builder(this)
+            .setTitle("重装 $type")
+            .setMessage("正在执行...\n\n请稍候")
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+        progressDialog.window?.setLayout(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+
+        val statusTextView = TextView(this).apply {
+            text = "准备中..."
+            setPadding(32, 16, 32, 16)
+            textSize = 13f
+            setTextColor(Color.parseColor("#B5A898"))
+        }
+        progressDialog.setView(statusTextView)
+
+        scope.launch {
+            try {
+                val app = application as PhoneIDEApp
+                val bm = app.bootstrapManager
+
+                var lastProgress = 0
+                bm.setProgressListener { percent, message ->
+                    if (percent != lastProgress) {
+                        lastProgress = percent
+                        scope.launch(Dispatchers.Main) {
+                            val status = if (percent < 0) {
+                                "❌ $message"
+                            } else {
+                                "$percent% - $message"
+                            }
+                            statusTextView.text = status
+                        }
+                    }
+                }
+
+                val success = withContext(Dispatchers.IO) {
+                    action(bm)
+                }
+
+                progressDialog.dismiss()
+
+                if (success) {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(getString(R.string.reinstall_complete))
+                        .setMessage("$type 重装成功！\n\n是否立即启动服务？")
+                        .setPositiveButton("启动") { _, _ ->
+                            startServerService()
+                            connectToServer()
+                        }
+                        .setNegativeButton("稍后", null)
+                        .show()
+                } else {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(getString(R.string.reinstall_failed))
+                        .setMessage("$type 重装失败，请查看日志获取详细信息。")
+                        .setPositiveButton("确定", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Reinstall $type failed", e)
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(getString(R.string.reinstall_failed))
+                    .setMessage("错误: ${e.message}")
+                    .setPositiveButton("确定", null)
+                    .show()
+            }
+        }
     }
 
     override fun onBackPressed() {
